@@ -8,3 +8,4 @@ node_modules/
 ajw.stack.config.json
 ajw.secrets.json
 *.zip
+*.env
