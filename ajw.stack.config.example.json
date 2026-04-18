@@ -1,0 +1,34 @@
+{
+  "project": {
+    "name": "AJW",
+    "workspacePath": "D:\\CODEX\\AJW"
+  },
+  "openclaw": {
+    "bridgeEndpoint": "http://localhost:3000/api/agent/run",
+    "gatewayUrl": "ws://127.0.0.1:18789",
+    "dashboardUrl": "http://127.0.0.1:18789/",
+    "publicPath": "\\\\wsl.localhost\\Ubuntu\\home\\hokkyalxndr\\.openclaw\\workspace\\bridge-proxy\\public",
+    "files": [
+      "index.html",
+      "analytics_override_v1.js",
+      "development_override.js",
+      "development_override_v2.js",
+      "ajw-extracted.js"
+    ]
+  },
+  "supabase": {
+    "projectUrl": "https://YOUR-PROJECT.supabase.co",
+    "anonKey": "ISI-ANON-KEY-DI-SINI",
+    "useSeparateTables": true,
+    "notes": "Jangan simpan service role di frontend AJW."
+  },
+  "github": {
+    "repo": "https://github.com/USERNAME/ajw",
+    "branch": "main",
+    "notes": "GitHub dipakai untuk source code dan history perubahan, bukan database operasional."
+  },
+  "backup": {
+    "path": "D:\\CODEX\\AJW\\backups",
+    "keepLatest": 30
+  }
+}

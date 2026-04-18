@@ -1,0 +1,10 @@
+chrome-headless/
+edge-headless/
+backups/
+dist/
+node_modules/
+*.log
+*.tmp
+ajw.stack.config.json
+ajw.secrets.json
+*.zip
