@@ -17,6 +17,9 @@
   var ordersCache = [];
   var productsCache = [];
   var quickRepliesCache = [];
+  var knowledgeCache = [];
+  var aiDraftsCache = [];
+  var aiSettings = null;
   var replyGroupFilter = window.localStorage.getItem("ajw_chat_reply_group") || "Umum";
   var predictionEnabled = window.localStorage.getItem("ajw_chat_pred_toggle") !== "0";
   var referenceEnabled = window.localStorage.getItem("ajw_chat_ref_toggle") !== "0";
@@ -121,9 +124,12 @@
       ".ajw-chip.on{border-color:#3b82f6;background:rgba(59,130,246,.18);color:#dbeafe}" +
       ".ajw-predict{margin-top:10px;padding:10px;border:1px solid var(--bd);border-radius:10px;background:rgba(17,20,26,.9)}" +
       ".ajw-predict h4{margin:0 0 8px 0;font-size:12px}" +
+      ".ajw-ai-draft{margin-top:8px;padding:10px;border:1px solid var(--bd);border-radius:10px;background:rgba(16,20,28,.92)}" +
+      ".ajw-ai-draft textarea{width:100%;min-height:90px;resize:vertical;margin-top:8px}" +
+      ".ajw-two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}" +
       ".ajw-chat-empty{padding:18px;color:var(--tx3);font-size:12px}" +
       "@media (max-width:1300px){.ajw-chat-shell{grid-template-columns:200px 300px minmax(0,1fr) 320px}}" +
-      "@media (max-width:980px){#V-chat{top:52px}.ajw-chat-toolbar{grid-template-columns:1fr 1fr auto;}.ajw-chat-shell{grid-template-columns:1fr;height:calc(100vh - 52px - 24px)}.ajw-chat-col{border-right:none;border-bottom:1px solid var(--bd)}.ajw-chat-col:last-child{border-bottom:none}}";
+      "@media (max-width:980px){#V-chat{top:52px}.ajw-chat-toolbar{grid-template-columns:1fr 1fr auto;}.ajw-chat-shell{grid-template-columns:1fr;height:calc(100vh - 52px - 24px)}.ajw-chat-col{border-right:none;border-bottom:1px solid var(--bd)}.ajw-chat-col:last-child{border-bottom:none}.ajw-two-col{grid-template-columns:1fr}}";
     document.head.appendChild(style);
   }
 
@@ -308,6 +314,39 @@
     quickRepliesCache = data.rows || [];
   }
 
+  async function loadKnowledge() {
+    if (!currentShopId) {
+      knowledgeCache = [];
+      return;
+    }
+    var data = await apiGet("/api/chat/knowledge?shop_id=" + encodeURIComponent(currentShopId) + "&limit=300");
+    knowledgeCache = data.rows || [];
+  }
+
+  async function loadAiSettings() {
+    if (!currentShopId) {
+      aiSettings = null;
+      return;
+    }
+    var data = await apiGet("/api/chat/ai/settings?shop_id=" + encodeURIComponent(currentShopId));
+    aiSettings = data.row || null;
+  }
+
+  async function loadAiDrafts() {
+    if (!currentShopId || !selectedConversationId) {
+      aiDraftsCache = [];
+      return;
+    }
+    var data = await apiGet(
+      "/api/chat/ai/drafts?shop_id=" +
+        encodeURIComponent(currentShopId) +
+        "&conversation_id=" +
+        encodeURIComponent(selectedConversationId) +
+        "&limit=15"
+    );
+    aiDraftsCache = data.rows || [];
+  }
+
   async function syncAll(refreshProducts) {
     currentShopId = selectedShopId();
     if (!currentShopId) throw new Error("shop_id wajib");
@@ -316,6 +355,8 @@
     await loadMessages();
     await loadOrders(true);
     await loadQuickReplies();
+    await loadKnowledge();
+    await loadAiSettings();
     await loadProducts(!!refreshProducts);
   }
 
@@ -330,9 +371,10 @@
     scrollThreadToBottom();
 
     try {
-      await Promise.all([loadMessages(), loadOrders(false)]);
+      await Promise.all([loadMessages(), loadOrders(false), loadAiDrafts()]);
       renderMessages();
       renderSidePanel();
+      renderAiDraftPanel();
       scrollThreadToBottom();
     } catch (_e) {}
 
@@ -341,13 +383,14 @@
       conversation_id: selectedConversationId
     })
       .then(function () {
-        return Promise.all([loadMessages(), loadOrders(true), loadConversations()]);
+        return Promise.all([loadMessages(), loadOrders(true), loadConversations(), loadAiDrafts()]);
       })
       .then(function () {
         renderHeaderState();
         renderConversations();
         renderMessages();
         renderSidePanel();
+        renderAiDraftPanel();
         scrollThreadToBottom();
       })
       .catch(function (_err) {});
@@ -382,10 +425,10 @@
         currentShopId = String(el.getAttribute("data-shop-id") || "");
         selectedConversationId = "";
         window.localStorage.setItem("ajw_chat_shop_id", currentShopId);
-        Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false)]).then(function () {
+        Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings()]).then(function () {
           if (selectedConversationId) {
             loadMessages().then(function () {
-              loadOrders(false).then(renderAll);
+              Promise.all([loadOrders(false), loadAiDrafts()]).then(renderAll);
             });
           } else {
             renderAll();
@@ -501,6 +544,88 @@
         renderAttachments();
       });
     });
+  }
+
+  function latestDraft() {
+    return aiDraftsCache && aiDraftsCache.length ? aiDraftsCache[0] : null;
+  }
+
+  function renderAiDraftPanel() {
+    var host = document.getElementById("CHAT-AI-DRAFT");
+    if (!host) return;
+    var d = latestDraft();
+    if (!d) {
+      host.innerHTML = '<div style="font-size:11px;color:var(--tx3)">AI Draft belum dibuat. Klik tombol <b>AI Draft</b> untuk generate balasan.</div>';
+      return;
+    }
+    var refs = safeJson(d.knowledge_refs, []);
+    host.innerHTML =
+      '<div class="ajw-ai-draft">' +
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">' +
+      '<div style="font-size:12px;font-weight:800">Draft AI (' + escSafe(d.provider || "smart") + ")</div>" +
+      '<div style="font-size:10px;color:var(--tx3)">' + escSafe(fmtTs(d.created_at)) + "</div>" +
+      "</div>" +
+      '<textarea id="CHAT-AI-DRAFT-TEXT" class="fi">' + escSafe(d.draft_text || "") + "</textarea>" +
+      (refs.length
+        ? ('<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">' +
+          refs
+            .slice(0, 8)
+            .map(function (r) {
+              return '<span class="ajw-chip">' + escSafe((r.group || "General") + ": " + (r.keyword || "")) + "</span>";
+            })
+            .join("") +
+          "</div>")
+        : "") +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">' +
+      '<button id="CHAT-AI-REJECT" class="btns" style="padding:7px 10px">Tolak</button>' +
+      '<button id="CHAT-AI-SEND" class="btnp" style="padding:7px 10px">Kirim Draft</button>' +
+      "</div>" +
+      "</div>";
+
+    var rejectBtn = document.getElementById("CHAT-AI-REJECT");
+    if (rejectBtn) {
+      rejectBtn.onclick = function () {
+        apiPost("/api/chat/ai/approve-send", {
+          draft_id: d.id,
+          shop_id: currentShopId,
+          conversation_id: selectedConversationId,
+          approved: false
+        })
+          .then(loadAiDrafts)
+          .then(renderAiDraftPanel)
+          .catch(function (err) {
+            toast("Gagal tolak draft AI: " + (err.message || err), "error");
+          });
+      };
+    }
+
+    var sendBtn = document.getElementById("CHAT-AI-SEND");
+    if (sendBtn) {
+      sendBtn.onclick = function () {
+        var finalText = String((document.getElementById("CHAT-AI-DRAFT-TEXT") || {}).value || "").trim();
+        if (!finalText) return toast("Draft kosong.", "warn");
+        apiPost("/api/chat/ai/approve-send", {
+          draft_id: d.id,
+          shop_id: currentShopId,
+          conversation_id: selectedConversationId,
+          approved: true,
+          final_text: finalText
+        })
+          .then(function () {
+            return Promise.all([loadMessages(), loadConversations(), loadAiDrafts()]);
+          })
+          .then(function () {
+            renderMessages();
+            renderConversations();
+            renderAiDraftPanel();
+            scrollThreadToBottom();
+            toast("Draft AI dikirim.", "success");
+          })
+          .catch(function (err) {
+            toast("Gagal kirim draft AI: " + (err.message || err), "error");
+          });
+      };
+    }
   }
 
   function renderOrdersTab() {
@@ -726,6 +851,35 @@
       '<label class="ajw-toggle"><input type="checkbox" id="CHAT-PREDICT-TOGGLE" ' + (predictionEnabled ? "checked" : "") + "> Teks Prediksi</label>" +
       '<label class="ajw-toggle"><input type="checkbox" id="CHAT-REF-TOGGLE" ' + (referenceEnabled ? "checked" : "") + "> Referensi Cepat</label>" +
       "</div>" +
+      '<div class="ajw-chat-card" style="margin-bottom:10px">' +
+      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Mode AI Balas Otomatis (Review Dulu)</div>' +
+      '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
+      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-ENABLED" ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "checked" : "") + "> AI Aktif</label>" +
+      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-APPROVAL" ' + (!aiSettings || Number(aiSettings.require_approval || 0) ? "checked" : "") + "> Perlu Persetujuan Kirim</label>" +
+      '<select id="CHAT-AI-PROVIDER" class="fi" style="max-width:150px">' +
+      '<option value="smart"' + (aiSettings && aiSettings.provider === "smart" ? " selected" : "") + ">Smart</option>" +
+      '<option value="openai"' + (aiSettings && aiSettings.provider === "openai" ? " selected" : "") + ">OpenAI</option>" +
+      '<option value="claude"' + (aiSettings && aiSettings.provider === "claude" ? " selected" : "") + ">Claude</option>" +
+      "</select>" +
+      '<button id="CHAT-AI-SAVE-SETTINGS" class="btns">Simpan Mode AI</button>' +
+      "</div>" +
+      "</div>" +
+      '<div class="ajw-two-col">' +
+      '<div class="ajw-chat-card">' +
+      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Kolom Tambah Balasan Cepat</div>' +
+      '<input id="CHAT-QR-KEYWORD" class="fi" placeholder="Keyword pemicu (contoh: stok, kirim, refund)">' +
+      '<input id="CHAT-QR-TITLE" class="fi" placeholder="Judul template" style="margin-top:8px">' +
+      '<textarea id="CHAT-QR-CONTENT" class="fi" style="margin-top:8px;min-height:88px" placeholder="Template jawaban..."></textarea>' +
+      '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-QR-ADD-FORM" class="btnp">Simpan Template</button></div>' +
+      "</div>" +
+      '<div class="ajw-chat-card">' +
+      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Pusat Informasi (Keyword + Jawaban)</div>' +
+      '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan">' +
+      '<input id="CHAT-KN-GROUP" class="fi" placeholder="Kategori (contoh: Pengiriman)" style="margin-top:8px">' +
+      '<textarea id="CHAT-KN-TEMPLATE" class="fi" style="margin-top:8px;min-height:88px" placeholder="Jawaban acuan untuk AI..."></textarea>' +
+      '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-KN-ADD" class="btnp">Simpan Referensi</button></div>' +
+      "</div>" +
+      "</div>" +
       (predictions.length
         ? ('<div class="ajw-predict"><h4>Teks Prediksi</h4><div style="display:flex;gap:6px;flex-wrap:wrap">' +
           predictions
@@ -752,6 +906,25 @@
             })
             .join("")
         : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk grup ini.</div>') +
+      (knowledgeCache.length
+        ? ('<div class="ajw-predict"><h4>Pusat Informasi Tersimpan</h4>' +
+          knowledgeCache
+            .slice(0, 30)
+            .map(function (k) {
+              return (
+                '<div class="ajw-chat-card" style="margin-bottom:8px">' +
+                '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">' +
+                '<div style="font-size:11px;font-weight:800;color:var(--tx)">' + escSafe(k.keyword || "-") + "</div>" +
+                '<button class="btns" data-kn-del="' + escSafe(k.id) + '" style="padding:5px 8px;font-size:10px">Hapus</button>' +
+                "</div>" +
+                '<div style="font-size:10px;color:var(--tx3);margin-top:4px">' + escSafe(k.group_name || "General") + "</div>" +
+                '<div style="font-size:12px;color:var(--tx2);margin-top:6px;white-space:pre-wrap">' + escSafe(k.template || "") + "</div>" +
+                "</div>"
+              );
+            })
+            .join("") +
+          "</div>")
+        : "") +
       (referenceEnabled
         ? '<div class="ajw-predict"><h4>Referensi Cepat</h4><div style="font-size:12px;color:var(--tx2)">Klik tab <b>Pesanan</b> untuk ambil nomor pesanan/resi, dan klik tab <b>Rincian Produk</b> untuk kirim link produk + SKU ke chat.</div></div>'
         : "")
@@ -826,6 +999,38 @@
       };
     }
 
+    var addReplyFormBtn = document.getElementById("CHAT-QR-ADD-FORM");
+    if (addReplyFormBtn) {
+      addReplyFormBtn.onclick = async function () {
+        var keyword = String((document.getElementById("CHAT-QR-KEYWORD") || {}).value || "").trim();
+        var title = String((document.getElementById("CHAT-QR-TITLE") || {}).value || "").trim();
+        var content = String((document.getElementById("CHAT-QR-CONTENT") || {}).value || "").trim();
+        if (!content) return toast("Isi template balasan cepat dulu.", "warn");
+        var finalTitle = title || keyword || content.slice(0, 30);
+        await apiPost("/api/chat/quick-replies", {
+          shop_id: currentShopId,
+          title: finalTitle,
+          content: content,
+          group_name: replyGroupFilter,
+          position: quickRepliesCache.length + 1
+        });
+        if (keyword) {
+          await apiPost("/api/chat/knowledge", {
+            shop_id: currentShopId,
+            keyword: keyword,
+            template: content,
+            group_name: replyGroupFilter,
+            source: "quick_reply",
+            priority: 5
+          });
+          await loadKnowledge();
+        }
+        await loadQuickReplies();
+        renderSidePanel();
+        toast("Balasan cepat tersimpan.", "success");
+      };
+    }
+
     host.querySelectorAll("[data-qr-use]").forEach(function (el) {
       el.addEventListener("click", function () {
         var id = String(el.getAttribute("data-qr-use") || "");
@@ -847,6 +1052,39 @@
           .then(renderAll)
           .catch(function (err) {
             toast("Gagal hapus balasan cepat: " + (err.message || err), "error");
+          });
+      });
+    });
+
+    var addKnowledgeBtn = document.getElementById("CHAT-KN-ADD");
+    if (addKnowledgeBtn) {
+      addKnowledgeBtn.onclick = async function () {
+        var keyword = String((document.getElementById("CHAT-KN-KEYWORD") || {}).value || "").trim();
+        var groupName = String((document.getElementById("CHAT-KN-GROUP") || {}).value || "").trim();
+        var template = String((document.getElementById("CHAT-KN-TEMPLATE") || {}).value || "").trim();
+        if (!keyword || !template) return toast("Keyword dan jawaban acuan wajib diisi.", "warn");
+        await apiPost("/api/chat/knowledge", {
+          shop_id: currentShopId,
+          keyword: keyword,
+          template: template,
+          group_name: groupName || "General",
+          source: "manual",
+          priority: 6
+        });
+        await loadKnowledge();
+        renderSidePanel();
+        toast("Pusat informasi tersimpan.", "success");
+      };
+    }
+
+    host.querySelectorAll("[data-kn-del]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        var id = String(el.getAttribute("data-kn-del") || "");
+        apiDelete("/api/chat/knowledge/" + encodeURIComponent(id))
+          .then(loadKnowledge)
+          .then(renderSidePanel)
+          .catch(function (err) {
+            toast("Gagal hapus referensi: " + (err.message || err), "error");
           });
       });
     });
@@ -890,6 +1128,29 @@
         renderSidePanel();
       });
     }
+
+    var aiSaveBtn = document.getElementById("CHAT-AI-SAVE-SETTINGS");
+    if (aiSaveBtn) {
+      aiSaveBtn.onclick = function () {
+        var aiEnabled = Boolean((document.getElementById("CHAT-AI-ENABLED") || {}).checked);
+        var requireApproval = Boolean((document.getElementById("CHAT-AI-APPROVAL") || {}).checked);
+        var provider = String((document.getElementById("CHAT-AI-PROVIDER") || {}).value || "smart");
+        apiPost("/api/chat/ai/settings", {
+          shop_id: currentShopId,
+          ai_enabled: aiEnabled,
+          require_approval: requireApproval,
+          provider: provider
+        })
+          .then(function (d) {
+            aiSettings = d.row || null;
+            renderHeaderState();
+            toast("Mode AI tersimpan.", "success");
+          })
+          .catch(function (err) {
+            toast("Gagal simpan mode AI: " + (err.message || err), "error");
+          });
+      };
+    }
   }
 
   function renderHeaderState() {
@@ -899,6 +1160,7 @@
     info.innerHTML =
       '<span class="ajw-chat-pill gold">Realtime ' + (realtimeEnabled ? "On" : "Off") + "</span>" +
       '<span class="ajw-chat-pill blue">Toko ' + escSafe(currentShopId || "-") + "</span>" +
+      '<span class="ajw-chat-pill ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "blue" : "red") + '">AI ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "On" : "Review") + "</span>" +
       (conv ? '<span class="ajw-chat-pill red">Pelanggan ' + escSafe(conv.to_name || conv.to_id || "-") + "</span>" : "");
     var realtimeBtn = document.getElementById("CHAT-REALTIME");
     if (realtimeBtn) realtimeBtn.textContent = realtimeEnabled ? "Realtime On" : "Realtime Off";
@@ -911,6 +1173,7 @@
     renderMessages();
     renderAttachments();
     renderSidePanel();
+    renderAiDraftPanel();
     renderFilterState();
     renderSideTabs();
   }
@@ -1066,6 +1329,7 @@
     var syncBtn = document.getElementById("CHAT-SYNC");
     var saveBtn = document.getElementById("CHAT-SAVE-API");
     var realtimeBtn = document.getElementById("CHAT-REALTIME");
+    var aiDraftBtn = document.getElementById("CHAT-AI-DRAFT-BTN");
     var imgInput = document.getElementById("CHAT-UPLOAD-IMG");
     var vidInput = document.getElementById("CHAT-UPLOAD-VID");
     var ta = document.getElementById("CHAT-REPLY-TEXT");
@@ -1099,6 +1363,7 @@
         syncAll(true)
           .then(function () {
             renderAll();
+            renderAiDraftPanel();
             scrollThreadToBottom();
             toast("Chat, produk, dan context pelanggan berhasil disinkron.", "success");
           })
@@ -1118,13 +1383,52 @@
     }
 
     if (sendBtn) sendBtn.onclick = sendCurrentMessage;
+    if (aiDraftBtn) {
+      aiDraftBtn.onclick = function () {
+        if (!currentShopId) return toast("Isi shop_id dulu.", "warn");
+        if (!selectedConversationId) return toast("Pilih percakapan dulu.", "warn");
+        apiPost("/api/chat/ai/draft", {
+          shop_id: currentShopId,
+          conversation_id: selectedConversationId
+        })
+          .then(function (d) {
+            var requireApproval = !aiSettings || Number(aiSettings.require_approval || 0) !== 0;
+            if (requireApproval) return d;
+            return apiPost("/api/chat/ai/approve-send", {
+              draft_id: d && d.row ? d.row.id : "",
+              shop_id: currentShopId,
+              conversation_id: selectedConversationId,
+              approved: true,
+              final_text: d && d.row ? d.row.draft_text : ""
+            });
+          })
+          .then(function () {
+            return Promise.all([loadAiDrafts(), loadMessages(), loadConversations()]);
+          })
+          .then(function () {
+            renderMessages();
+            renderConversations();
+            renderAiDraftPanel();
+            scrollThreadToBottom();
+            var requireApproval = !aiSettings || Number(aiSettings.require_approval || 0) !== 0;
+            toast(requireApproval ? "Draft AI siap untuk review." : "AI mengirim balasan otomatis.", "success");
+          })
+          .catch(function (err) {
+            toast("Gagal membuat draft AI: " + (err.message || err), "error");
+          });
+      };
+    }
     if (shopInput) {
       shopInput.onchange = function () {
         currentShopId = selectedShopId();
         selectedConversationId = "";
         Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false)])
           .then(function () {
+            return Promise.all([loadKnowledge(), loadAiSettings()]);
+          })
+          .then(function () {
             renderAll();
+            renderAiDraftPanel();
           })
           .catch(function (err) {
             toast("Gagal pindah toko: " + (err.message || err), "error");
@@ -1262,8 +1566,12 @@
       '<textarea id="CHAT-REPLY-TEXT" class="fi" style="min-height:110px;resize:vertical" placeholder="Tulis balasan, kirim emoji, paste gambar, atau lampirkan video..."></textarea>' +
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px">' +
       '<div style="font-size:11px;color:var(--tx3)">Realtime aktif, percakapan disegarkan berkala.</div>' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+      '<button id="CHAT-AI-DRAFT-BTN" class="btns">AI Draft</button>' +
       '<button id="CHAT-SEND" class="btnp">Kirim</button>' +
       "</div>" +
+      "</div>" +
+      '<div id="CHAT-AI-DRAFT"></div>' +
       '<div id="CHAT-EMOJI" class="ajw-chat-emoji" style="display:none"></div>' +
       "</div>" +
       "</div>" +
@@ -1287,11 +1595,11 @@
         return loadConversations();
       })
       .then(function () {
-        return Promise.all([loadQuickReplies(), loadProducts(false)]);
+        return Promise.all([loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings()]);
       })
       .then(function () {
         if (selectedConversationId) {
-          return Promise.all([loadMessages(), loadOrders(false)]);
+          return Promise.all([loadMessages(), loadOrders(false), loadAiDrafts()]);
         }
       })
       .then(function () {

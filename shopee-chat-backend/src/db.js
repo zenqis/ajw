@@ -32,7 +32,10 @@ function defaultState() {
     webhook_events: [],
     quick_replies: {},
     orders: {},
-    products: {}
+    products: {},
+    ai_knowledge: {},
+    ai_settings: {},
+    ai_drafts: {}
   };
 }
 
@@ -60,7 +63,10 @@ if (persistenceEnabled && fs.existsSync(absDbPath)) {
       webhook_events: Array.isArray(parsed.webhook_events) ? parsed.webhook_events : [],
       quick_replies: parsed.quick_replies || {},
       orders: parsed.orders || {},
-      products: parsed.products || {}
+      products: parsed.products || {},
+      ai_knowledge: parsed.ai_knowledge || {},
+      ai_settings: parsed.ai_settings || {},
+      ai_drafts: parsed.ai_drafts || {}
     };
   } catch {
     state = defaultState();
@@ -466,5 +472,166 @@ export async function listProductsByShop({ shopId = "", search = "", limit = 80 
     return String(r.item_name || "").toLowerCase().includes(term) || String(r.sku || "").toLowerCase().includes(term);
   });
   rows.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  return rows.slice(0, limit);
+}
+
+export async function listAiKnowledge({ shopId = "", groupName = "", search = "", limit = 200 } = {}) {
+  if (useSupabase) {
+    const query = {
+      select: "*",
+      order: "position.asc",
+      limit
+    };
+    if (shopId) query.shop_id = `eq.${String(shopId)}`;
+    if (groupName) query.group_name = `eq.${String(groupName)}`;
+    if (search) query.keyword = `ilike.*${String(search).replace(/\*/g, "")}*`;
+    return sbSelect("shopee_chat_ai_knowledge", query);
+  }
+
+  const term = String(search || "").toLowerCase();
+  const rows = Object.values(state.ai_knowledge).filter((r) => {
+    if (shopId && String(r.shop_id) !== String(shopId)) return false;
+    if (groupName && String(r.group_name) !== String(groupName)) return false;
+    if (!term) return true;
+    return (
+      String(r.keyword || "").toLowerCase().includes(term) ||
+      String(r.template || "").toLowerCase().includes(term)
+    );
+  });
+  rows.sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+  return rows.slice(0, limit);
+}
+
+export async function upsertAiKnowledge(row) {
+  const clean = {
+    id: String(row.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+    shop_id: String(row.shop_id || ""),
+    keyword: String(row.keyword || "").trim(),
+    template: String(row.template || "").trim(),
+    group_name: String(row.group_name || "General"),
+    priority: Number(row.priority || 0),
+    active: row.active == null ? 1 : Number(row.active ? 1 : 0),
+    position: Number(row.position || 0),
+    source: String(row.source || "manual"),
+    updated_at: row.updated_at || nowIso()
+  };
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_ai_knowledge", [clean], "id");
+    return clean;
+  }
+  state.ai_knowledge[clean.id] = clean;
+  persist();
+  return clean;
+}
+
+export async function deleteAiKnowledge(id) {
+  const key = String(id || "");
+  if (useSupabase) {
+    await sbDelete("shopee_chat_ai_knowledge", { id: `eq.${key}` });
+    return;
+  }
+  delete state.ai_knowledge[key];
+  persist();
+}
+
+export async function getAiSetting(shopId) {
+  const key = String(shopId || "");
+  if (useSupabase) {
+    const rows = await sbSelect("shopee_chat_ai_settings", {
+      select: "*",
+      shop_id: `eq.${key}`,
+      limit: 1
+    });
+    return rows && rows[0] ? rows[0] : null;
+  }
+  return state.ai_settings[key] || null;
+}
+
+export async function upsertAiSetting(row) {
+  const clean = {
+    shop_id: String(row.shop_id || ""),
+    ai_enabled: Number(row.ai_enabled ? 1 : 0),
+    require_approval: row.require_approval == null ? 1 : Number(row.require_approval ? 1 : 0),
+    provider: String(row.provider || "smart"),
+    model: String(row.model || ""),
+    prompt_preset: String(row.prompt_preset || ""),
+    updated_at: row.updated_at || nowIso()
+  };
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_ai_settings", [clean], "shop_id");
+    return clean;
+  }
+  state.ai_settings[clean.shop_id] = clean;
+  persist();
+  return clean;
+}
+
+export async function upsertAiDraft(row) {
+  const clean = {
+    id: String(row.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+    shop_id: String(row.shop_id || ""),
+    conversation_id: String(row.conversation_id || ""),
+    source_message_id: String(row.source_message_id || ""),
+    source_text: String(row.source_text || ""),
+    draft_text: String(row.draft_text || ""),
+    provider: String(row.provider || "smart"),
+    model: String(row.model || ""),
+    knowledge_refs: String(row.knowledge_refs || ""),
+    status: String(row.status || "draft"),
+    created_at: row.created_at || nowIso(),
+    updated_at: row.updated_at || nowIso()
+  };
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_ai_drafts", [clean], "id");
+    return clean;
+  }
+  state.ai_drafts[clean.id] = clean;
+  persist();
+  return clean;
+}
+
+export async function updateAiDraft(id, values) {
+  const key = String(id || "");
+  if (!key) return null;
+  if (useSupabase) {
+    await sbPatch("shopee_chat_ai_drafts", { id: `eq.${key}` }, {
+      ...values,
+      updated_at: nowIso()
+    });
+    const rows = await sbSelect("shopee_chat_ai_drafts", {
+      select: "*",
+      id: `eq.${key}`,
+      limit: 1
+    });
+    return rows && rows[0] ? rows[0] : null;
+  }
+  state.ai_drafts[key] = {
+    ...(state.ai_drafts[key] || { id: key }),
+    ...values,
+    updated_at: nowIso()
+  };
+  persist();
+  return state.ai_drafts[key];
+}
+
+export async function listAiDrafts({ shopId = "", conversationId = "", status = "", limit = 60 } = {}) {
+  if (useSupabase) {
+    const query = {
+      select: "*",
+      order: "created_at.desc",
+      limit
+    };
+    if (shopId) query.shop_id = `eq.${String(shopId)}`;
+    if (conversationId) query.conversation_id = `eq.${String(conversationId)}`;
+    if (status) query.status = `eq.${String(status)}`;
+    return sbSelect("shopee_chat_ai_drafts", query);
+  }
+  const rows = Object.values(state.ai_drafts).filter((r) => {
+    if (shopId && String(r.shop_id) !== String(shopId)) return false;
+    if (conversationId && String(r.conversation_id) !== String(conversationId)) return false;
+    if (status && String(r.status) !== String(status)) return false;
+    return true;
+  });
+  rows.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   return rows.slice(0, limit);
 }

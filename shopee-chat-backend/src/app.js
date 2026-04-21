@@ -3,7 +3,9 @@ import cors from "cors";
 import express from "express";
 
 import {
+  deleteAiKnowledge,
   deleteQuickReply,
+  getAiSetting,
   getConversationById,
   getDbPath,
   getTokenByShopId,
@@ -15,8 +17,14 @@ import {
   listOrdersByConversation,
   listProductsByShop,
   listQuickReplies,
+  listAiDrafts,
+  listAiKnowledge,
   listTokens,
   nowIso,
+  upsertAiDraft,
+  updateAiDraft,
+  upsertAiKnowledge,
+  upsertAiSetting,
   updateConversationStats,
   upsertConversations,
   upsertMessages,
@@ -47,6 +55,10 @@ const supabaseKey = String(
     ""
 ).trim();
 const supabaseBucket = String(process.env.SUPABASE_STORAGE_BUCKET || "chat-media").trim();
+const openAiKey = String(process.env.OPENAI_API_KEY || "").trim();
+const openAiModel = String(process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
+const anthropicKey = String(process.env.ANTHROPIC_API_KEY || "").trim();
+const anthropicModel = String(process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest").trim();
 const lastOrderSyncAt = new Map();
 
 app.use(cors());
@@ -670,6 +682,182 @@ async function latestIncomingText(conversationId, shopId) {
   return String((latest && latest.content_text) || "").trim();
 }
 
+function defaultAiSetting(shopId) {
+  return {
+    shop_id: String(shopId || ""),
+    ai_enabled: 0,
+    require_approval: 1,
+    provider: openAiKey ? "openai" : anthropicKey ? "claude" : "smart",
+    model: openAiKey ? openAiModel : anthropicKey ? anthropicModel : "smart",
+    prompt_preset:
+      "Balas ramah, singkat, jelas, bahasa Indonesia santai sopan, dan sesuaikan kebiasaan toko."
+  };
+}
+
+function pickKnowledgeByText(text, rows, limit = 6) {
+  const raw = String(text || "").toLowerCase();
+  const scored = (rows || [])
+    .filter((r) => Number(r.active || 0) !== 0)
+    .map((r) => {
+      const keyword = String(r.keyword || "").toLowerCase();
+      const template = String(r.template || "");
+      const group = String(r.group_name || "General");
+      let score = Number(r.priority || 0);
+      if (keyword && raw.includes(keyword)) score += 6;
+      const words = keyword.split(/[,\s]+/).filter(Boolean);
+      for (const w of words) {
+        if (w.length >= 3 && raw.includes(w)) score += 1;
+      }
+      return { id: String(r.id || ""), keyword, template, group, score };
+    })
+    .filter((r) => r.template)
+    .sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit);
+}
+
+async function requestOpenAiDraft({ incomingText, historyRows, knowledgeRows, preset }) {
+  const prompt = [
+    "Kamu CS marketplace Indonesia.",
+    String(preset || ""),
+    "Buat 1 balasan singkat (maks 600 chars), profesional, ramah.",
+    "Gunakan referensi knowledge jika relevan, jangan halusinasi stok/resi.",
+    "Jika data kurang pasti, minta klarifikasi singkat."
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const payload = {
+    model: openAiModel,
+    temperature: 0.3,
+    messages: [
+      { role: "system", content: prompt },
+      {
+        role: "user",
+        content:
+          "Pesan pembeli:\n" +
+          String(incomingText || "") +
+          "\n\nHistori singkat:\n" +
+          historyRows.map((h) => `- ${h.role}: ${h.text}`).join("\n") +
+          "\n\nKnowledge:\n" +
+          knowledgeRows.map((k) => `- [${k.group}] ${k.template}`).join("\n")
+      }
+    ]
+  };
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openAiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error((json && (json.error?.message || json.message)) || "OpenAI request gagal");
+  }
+  return String(json?.choices?.[0]?.message?.content || "").trim();
+}
+
+async function requestClaudeDraft({ incomingText, historyRows, knowledgeRows, preset }) {
+  const msg =
+    "Pesan pembeli:\n" +
+    String(incomingText || "") +
+    "\n\nHistori singkat:\n" +
+    historyRows.map((h) => `- ${h.role}: ${h.text}`).join("\n") +
+    "\n\nKnowledge:\n" +
+    knowledgeRows.map((k) => `- [${k.group}] ${k.template}`).join("\n") +
+    "\n\nInstruksi:\nBuat 1 balasan singkat, ramah, sopan, jelas, maksimal 600 karakter.";
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": anthropicKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      model: anthropicModel,
+      max_tokens: 500,
+      temperature: 0.3,
+      system: String(preset || "Kamu CS marketplace Indonesia."),
+      messages: [{ role: "user", content: msg }]
+    })
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    throw new Error((json && (json.error?.message || json.message)) || "Claude request gagal");
+  }
+  const text = Array.isArray(json?.content)
+    ? json.content.map((c) => (typeof c?.text === "string" ? c.text : "")).join("\n")
+    : "";
+  return String(text || "").trim();
+}
+
+async function generateAiDraft({ shopId, conversationId, incomingText }) {
+  const settings = (await getAiSetting(shopId)) || defaultAiSetting(shopId);
+  const historyRaw = await listMessages(conversationId, 20, "desc");
+  const historyRows = historyRaw
+    .slice(0, 10)
+    .reverse()
+    .map((m) => ({
+      role: String(m.from_id || "") === String(shopId) ? "penjual" : "pembeli",
+      text: String(m.content_text || "").slice(0, 260)
+    }));
+  const quickReplies = await listQuickReplies({ shopId, limit: 120 });
+  const knowledge = await listAiKnowledge({ shopId, limit: 240 });
+  const mergedKnowledge = [
+    ...knowledge,
+    ...quickReplies.map((q, idx) => ({
+      id: `qr_${idx}`,
+      keyword: String(q.title || ""),
+      template: String(q.content || ""),
+      group_name: String(q.group_name || "Umum"),
+      priority: 2,
+      active: 1
+    }))
+  ];
+  const selectedKnowledge = pickKnowledgeByText(incomingText, mergedKnowledge, 8);
+  let text = "";
+  let provider = String(settings.provider || "smart").toLowerCase();
+  let model = String(settings.model || "");
+
+  if (provider === "openai" && openAiKey) {
+    try {
+      text = await requestOpenAiDraft({
+        incomingText,
+        historyRows,
+        knowledgeRows: selectedKnowledge,
+        preset: settings.prompt_preset
+      });
+    } catch (_err) {
+      provider = "smart";
+    }
+  } else if ((provider === "claude" || provider === "anthropic") && anthropicKey) {
+    try {
+      text = await requestClaudeDraft({
+        incomingText,
+        historyRows,
+        knowledgeRows: selectedKnowledge,
+        preset: settings.prompt_preset
+      });
+    } catch (_err) {
+      provider = "smart";
+    }
+  }
+
+  if (!text) {
+    const templates = selectedKnowledge.map((k) => k.template).filter(Boolean);
+    text = smartReplyFromText(incomingText, templates);
+    provider = "smart";
+    model = "rule-engine";
+  }
+
+  return {
+    text: String(text || "").slice(0, 1600),
+    provider,
+    model: model || (provider === "openai" ? openAiModel : provider === "claude" ? anthropicModel : "rule-engine"),
+    refs: selectedKnowledge.map((k) => ({ id: k.id, keyword: k.keyword, group: k.group }))
+  };
+}
+
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
@@ -679,7 +867,12 @@ app.get("/health", (_req, res) => {
     redirect_url: redirectUrl,
     db_path: getDbPath(),
     supabase_enabled: isSupabaseEnabled(),
-    storage_bucket: supabaseBucket
+    storage_bucket: supabaseBucket,
+    ai: {
+      openai_ready: Boolean(openAiKey),
+      claude_ready: Boolean(anthropicKey),
+      default_provider: openAiKey ? "openai" : anthropicKey ? "claude" : "smart"
+    }
   });
 });
 
@@ -1083,6 +1276,153 @@ app.delete("/api/chat/quick-replies/:id", async (req, res) => {
   try {
     await deleteQuickReply(String(req.params.id || ""));
     res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.get("/api/chat/knowledge", async (req, res) => {
+  try {
+    const shopId = String(req.query.shop_id || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    const groupName = String(req.query.group_name || "").trim();
+    const search = String(req.query.search || "").trim();
+    const limit = Math.min(400, Math.max(1, Number(req.query.limit || 220)));
+    const rows = await listAiKnowledge({ shopId, groupName, search, limit });
+    res.json({ ok: true, rows });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/knowledge", async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const keyword = String(req.body.keyword || "").trim();
+    const template = String(req.body.template || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    if (!keyword) throw new Error("keyword wajib");
+    if (!template) throw new Error("template wajib");
+    const row = await upsertAiKnowledge({
+      id: req.body.id,
+      shop_id: shopId,
+      keyword,
+      template,
+      group_name: String(req.body.group_name || "General"),
+      priority: Number(req.body.priority || 0),
+      active: req.body.active == null ? 1 : Number(req.body.active ? 1 : 0),
+      position: Number(req.body.position || 0),
+      source: String(req.body.source || "manual"),
+      updated_at: nowIso()
+    });
+    res.json({ ok: true, row });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.delete("/api/chat/knowledge/:id", async (req, res) => {
+  try {
+    await deleteAiKnowledge(String(req.params.id || ""));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.get("/api/chat/ai/settings", async (req, res) => {
+  try {
+    const shopId = String(req.query.shop_id || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    const row = (await getAiSetting(shopId)) || defaultAiSetting(shopId);
+    res.json({ ok: true, row });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/ai/settings", async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    const row = await upsertAiSetting({
+      shop_id: shopId,
+      ai_enabled: req.body.ai_enabled == null ? 1 : Number(req.body.ai_enabled ? 1 : 0),
+      require_approval: req.body.require_approval == null ? 1 : Number(req.body.require_approval ? 1 : 0),
+      provider: String(req.body.provider || "smart"),
+      model: String(req.body.model || ""),
+      prompt_preset: String(req.body.prompt_preset || ""),
+      updated_at: nowIso()
+    });
+    res.json({ ok: true, row });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/ai/draft", async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const conversationId = String(req.body.conversation_id || "").trim();
+    if (!shopId || !conversationId) throw new Error("shop_id dan conversation_id wajib");
+    const incomingText = String(req.body.incoming_text || "").trim() || (await latestIncomingText(conversationId, shopId));
+    if (!incomingText) throw new Error("Tidak ada pesan pembeli untuk dibuatkan draft.");
+    const ai = await generateAiDraft({ shopId, conversationId, incomingText });
+    const row = await upsertAiDraft({
+      shop_id: shopId,
+      conversation_id: conversationId,
+      source_text: incomingText,
+      draft_text: ai.text,
+      provider: ai.provider,
+      model: ai.model,
+      knowledge_refs: JSON.stringify(ai.refs || []),
+      status: "draft",
+      created_at: nowIso(),
+      updated_at: nowIso()
+    });
+    res.json({ ok: true, row, refs: ai.refs || [] });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.get("/api/chat/ai/drafts", async (req, res) => {
+  try {
+    const shopId = String(req.query.shop_id || "").trim();
+    const conversationId = String(req.query.conversation_id || "").trim();
+    const status = String(req.query.status || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    const rows = await listAiDrafts({
+      shopId,
+      conversationId,
+      status,
+      limit: Math.min(120, Math.max(1, Number(req.query.limit || 25)))
+    });
+    res.json({ ok: true, rows });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/ai/approve-send", async (req, res) => {
+  try {
+    const draftId = String(req.body.draft_id || "").trim();
+    const shopId = String(req.body.shop_id || "").trim();
+    const conversationId = String(req.body.conversation_id || "").trim();
+    const approved = req.body.approved == null ? true : Boolean(req.body.approved);
+    const finalText = String(req.body.final_text || "").trim();
+    if (!draftId || !shopId || !conversationId) throw new Error("draft_id, shop_id, conversation_id wajib");
+    const row = await updateAiDraft(draftId, {
+      status: approved ? "approved" : "rejected",
+      draft_text: finalText || undefined
+    });
+    if (approved) {
+      const text = finalText || String((row && row.draft_text) || "");
+      if (!text) throw new Error("draft_text kosong");
+      await sendShopeeText(shopId, conversationId, text);
+      await updateAiDraft(draftId, { status: "sent" });
+    }
+    res.json({ ok: true, row });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
   }
