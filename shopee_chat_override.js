@@ -11,7 +11,11 @@
 
   function fmtTs(ts) {
     if (!ts) return "-";
-    var d = new Date(Number(ts) * 1000);
+    var n = Number(ts);
+    var d = Number.isFinite(n)
+      ? new Date(n > 9999999999 ? n : n * 1000)
+      : new Date(String(ts));
+    if (Number.isNaN(d.getTime())) return "-";
     return d.toLocaleString("id-ID");
   }
 
@@ -135,8 +139,16 @@
     }
   }
 
-  window._chatOpenConv = function (id) {
-    renderMessages(id);
+  window._chatOpenConv = async function (id) {
+    selectedConversationId = id;
+    try {
+      if (currentShopId) {
+        await apiPost("/api/chat/sync", { shop_id: currentShopId, conversation_id: id });
+      }
+    } catch (err) {
+      if (window.toast) window.toast("Sync percakapan gagal: " + (err.message || err), "warn");
+    }
+    await renderMessages(id);
     setTimeout(renderConversations, 30);
   };
 
