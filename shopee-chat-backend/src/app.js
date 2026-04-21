@@ -384,6 +384,43 @@ async function syncShopProducts(shopId) {
   return items;
 }
 
+async function syncLatestShopOrders(shopId) {
+  const accessToken = await ensureAccessToken(shopId);
+  const now = Math.floor(Date.now() / 1000);
+  const from = now - 60 * 60 * 24 * 14;
+  const listPath = "/api/v2/order/get_order_list";
+  const listData = await callShopeeAuth(listPath, "GET", {
+    shopId,
+    accessToken,
+    query: {
+      time_range_field: "create_time",
+      time_from: String(from),
+      time_to: String(now),
+      page_size: "50",
+      order_status: "READY_TO_SHIP"
+    }
+  }).catch(async function () {
+    return callShopeeAuth(listPath, "GET", {
+      shopId,
+      accessToken,
+      query: {
+        time_range_field: "create_time",
+        time_from: String(from),
+        time_to: String(now),
+        page_size: "50"
+      }
+    });
+  });
+
+  if (listData && listData.error) throw new Error(`${listData.error}: ${listData.message || "get_order_list gagal"}`);
+  const orderRefs = ((listData && listData.response && listData.response.order_list) || [])
+    .map((row) => String(row.order_sn || ""))
+    .filter(Boolean);
+  if (!orderRefs.length) return [];
+
+  return syncOrdersByRefs(shopId, "", orderRefs.slice(0, 50));
+}
+
 async function sendShopeePayloadCandidates(shopId, conversationId, candidates) {
   const accessToken = await ensureAccessToken(shopId);
   const path = "/api/v2/sellerchat/send_message";
@@ -593,15 +630,21 @@ app.post("/api/chat/sync", async (req, res) => {
       : await syncConversations(shopId);
 
     let productsSynced = 0;
+    let ordersSynced = 0;
     if (!conversationId) {
       try {
         productsSynced = (await syncShopProducts(shopId)).length;
       } catch (err) {
         console.error("product sync warning:", err.message || err);
       }
+      try {
+        ordersSynced = (await syncLatestShopOrders(shopId)).length;
+      } catch (err) {
+        console.error("order sync warning:", err.message || err);
+      }
     }
 
-    res.json({ ok: true, synced, products_synced: productsSynced });
+    res.json({ ok: true, synced, products_synced: productsSynced, orders_synced: ordersSynced });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
   }
@@ -615,6 +658,11 @@ app.post("/api/chat/realtime/poll", async (req, res) => {
 
     if (conversationId) await syncConversationMessages(shopId, conversationId);
     else await syncConversations(shopId);
+    try {
+      await syncLatestShopOrders(shopId);
+    } catch (err) {
+      console.error("poll order sync warning:", err.message || err);
+    }
 
     const conversations = await listConversationsWithStats({ shopId, limit: 100, offset: 0 });
     const messages = conversationId ? await listMessages(conversationId, 120, "asc") : [];
@@ -690,7 +738,17 @@ app.get("/api/chat/orders", async (req, res) => {
       );
       if (orderRefs.length) await syncOrdersByRefs(shopId, conversationId, orderRefs);
     }
-    const rows = await listOrdersByConversation({ shopId, conversationId, limit: 20 });
+    const conv = await getConversationById(conversationId);
+    const convName = String((conv && conv.to_name) || "").trim().toLowerCase();
+    let rows = await listOrdersByConversation({ shopId, conversationId, limit: 50 });
+
+    if ((!rows || !rows.length) && convName) {
+      rows = (await listOrdersByConversation({ shopId, conversationId: "", limit: 50 })).filter((row) =>
+        String(row.customer_name || "").trim().toLowerCase() === convName
+      );
+    }
+
+    rows = rows.sort((a, b) => Number(b.create_time || 0) - Number(a.create_time || 0)).slice(0, 20);
     res.json({ ok: true, rows });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
