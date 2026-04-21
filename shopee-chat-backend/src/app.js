@@ -272,7 +272,7 @@ async function syncConversationMessages(shopId, conversationId) {
 
 async function syncConversations(
   shopId,
-  { syncMessages = true, hotLimit = 12, pageSize = 50, maxPages = 8 } = {}
+  { syncMessages = true, hotLimit = 12, pageSize = 50, maxPages = 8, listType = "all" } = {}
 ) {
   const accessToken = await ensureAccessToken(shopId);
   const path = "/api/v2/sellerchat/get_conversation_list";
@@ -287,7 +287,7 @@ async function syncConversations(
     const query = buildSignedQuery(path, ts, { accessToken, shopId });
     const queryObj = Object.fromEntries(new URLSearchParams(query));
     queryObj.direction = "latest";
-    queryObj.type = "all";
+    queryObj.type = String(listType || "all");
     queryObj.page_size = String(Math.min(100, Math.max(10, Number(pageSize || 50))));
     queryObj.offset = String(Math.max(0, Number(offset || 0)));
 
@@ -764,9 +764,19 @@ app.post("/api/shopee/live-push", jsonFromRaw, async (req, res) => {
         await syncConversationMessages(shopId, conversationId);
       } else if (shopId) {
         const deepSync = pushCode === "10" || pushCode === "webchat_push";
+        if (deepSync) {
+          await syncConversations(shopId, {
+            syncMessages: true,
+            hotLimit: 30,
+            listType: "unread",
+            pageSize: 100,
+            maxPages: 6
+          });
+        }
         await syncConversations(shopId, {
           syncMessages: deepSync,
           hotLimit: deepSync ? 20 : 0,
+          listType: "all",
           pageSize: 100,
           maxPages: 6
         });
@@ -819,7 +829,21 @@ app.post("/api/chat/realtime/poll", async (req, res) => {
     if (!shopId) throw new Error("shop_id wajib");
 
     // Always refresh conversation list so newest buyers bubble up immediately.
-    await syncConversations(shopId, { syncMessages: false, pageSize: 100, maxPages: 4 });
+    await syncConversations(shopId, {
+      syncMessages: false,
+      listType: "all",
+      pageSize: 100,
+      maxPages: 4
+    });
+    if (!conversationId) {
+      await syncConversations(shopId, {
+        syncMessages: true,
+        hotLimit: 20,
+        listType: "unread",
+        pageSize: 100,
+        maxPages: 3
+      });
+    }
     if (conversationId) await syncConversationMessages(shopId, conversationId);
     try {
       const now = Date.now();
@@ -847,9 +871,16 @@ app.get("/api/chat/conversations", async (req, res) => {
     const shopId = String(req.query.shop_id || "");
     const filter = String(req.query.filter || "all").toLowerCase();
     const sync = String(req.query.sync || "") === "1";
+    const syncType = String(req.query.sync_type || "all").toLowerCase();
     if (sync && shopId) {
       try {
-        await syncConversations(shopId, { syncMessages: false, pageSize: 100, maxPages: 4 });
+        await syncConversations(shopId, {
+          syncMessages: syncType === "unread",
+          hotLimit: syncType === "unread" ? 20 : 0,
+          listType: syncType === "unread" ? "unread" : "all",
+          pageSize: 100,
+          maxPages: 4
+        });
       } catch (err) {
         console.error("conversation sync warning:", err.message || err);
       }
@@ -974,7 +1005,8 @@ app.get("/api/chat/debug/push-last", async (req, res) => {
         shop_id: String(payload.shop_id || payload.shopid || ""),
         conversation_id: String(payload.conversation_id || ""),
         message_id: String(payload.message_id || ""),
-        push_code: String(payload.code || payload.push_code || payload.type || "")
+        push_code: String(payload.code || payload.push_code || payload.type || ""),
+        payload
       };
     });
     res.json({ ok: true, rows: parsed });
