@@ -42,8 +42,11 @@
   var shopSearch = window.localStorage.getItem("ajw_chat_shop_search") || "";
   var emojiOpen = false;
   var pollInFlight = false;
+  var autonomousInFlight = false;
   var lastRealtimeConvSig = "";
   var lastRealtimeMsgSig = "";
+  var lastUserActionAt = 0;
+  var refreshConversationsTimer = null;
   var savedBodyStyle = null;
   var EMOJIS = ["🙂", "😊", "🙏", "👍", "👌", "🔥", "⭐", "🎣", "📦", "🚚", "💬", "❤️"];
 
@@ -294,13 +297,16 @@
   }
 
   function refreshConversationsBg() {
-    loadConversations()
-      .then(function () {
-        renderConversations();
-        renderShops();
-        renderHeaderState();
-      })
-      .catch(function () {});
+    if (refreshConversationsTimer) clearTimeout(refreshConversationsTimer);
+    refreshConversationsTimer = setTimeout(function () {
+      loadConversations()
+        .then(function () {
+          renderConversations();
+          renderShops();
+          renderHeaderState();
+        })
+        .catch(function () {});
+    }, 120);
   }
 
   async function loadMessages() {
@@ -494,6 +500,7 @@
 
     host.querySelectorAll("[data-shop-id]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         currentShopId = String(el.getAttribute("data-shop-id") || "");
         selectedConversationId = "";
         window.localStorage.setItem("ajw_chat_shop_id", currentShopId);
@@ -1031,7 +1038,7 @@
         "</div>" +
         (filteredKnowledge.length
           ? filteredKnowledge
-              .slice(0, 60)
+              .slice(0, 200)
               .map(function (k) {
                 return (
                   '<div class="ajw-chat-card">' +
@@ -1098,6 +1105,7 @@
                 "</div>"
               );
             })
+            .slice(0, 250)
             .join("")
         : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk grup ini.</div>') +
       "</div></div>"
@@ -1133,6 +1141,7 @@
 
     actionRoot.querySelectorAll("[data-send-product]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         var itemId = String(el.getAttribute("data-send-product") || "");
         var row = productsCache.find(function (r) { return String(r.item_id) === itemId; });
         if (!row) return;
@@ -1156,6 +1165,7 @@
     var addReplyBtn = actionRoot.querySelector("#CHAT-QR-ADD");
     if (addReplyBtn) {
       addReplyBtn.onclick = async function () {
+        lastUserActionAt = Date.now();
         var title = prompt("Judul balasan cepat:");
         if (title == null) return;
         var content = prompt("Isi balasan cepat:");
@@ -1177,6 +1187,7 @@
     var addReplyFormBtn = actionRoot.querySelector("#CHAT-QR-ADD-FORM");
     if (addReplyFormBtn) {
       addReplyFormBtn.onclick = async function () {
+        lastUserActionAt = Date.now();
         var keyword = String((document.getElementById("CHAT-QR-KEYWORD") || {}).value || "").trim();
         var title = String((document.getElementById("CHAT-QR-TITLE") || {}).value || "").trim();
         var content = String((document.getElementById("CHAT-QR-CONTENT") || {}).value || "").trim();
@@ -1221,6 +1232,7 @@
 
     actionRoot.querySelectorAll("[data-qr-use]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         var id = String(el.getAttribute("data-qr-use") || "");
         var row = quickRepliesCache.find(function (r) { return String(r.id) === id; });
         if (!row) return;
@@ -1234,6 +1246,7 @@
 
     actionRoot.querySelectorAll("[data-qr-del]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         var id = String(el.getAttribute("data-qr-del") || "");
         apiDelete("/api/chat/quick-replies/" + encodeURIComponent(id))
           .then(loadQuickReplies)
@@ -1247,6 +1260,7 @@
     var addKnowledgeBtn = actionRoot.querySelector("#CHAT-KN-ADD");
     if (addKnowledgeBtn) {
       addKnowledgeBtn.onclick = async function () {
+        lastUserActionAt = Date.now();
         var keyword = String((document.getElementById("CHAT-KN-KEYWORD") || {}).value || "").trim();
         var groupName = String((document.getElementById("CHAT-KN-GROUP") || {}).value || "").trim();
         var template = String((document.getElementById("CHAT-KN-TEMPLATE") || {}).value || "").trim();
@@ -1286,6 +1300,7 @@
 
     actionRoot.querySelectorAll("[data-kn-filter]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         knowledgeCategoryFilter = String(el.getAttribute("data-kn-filter") || "Semua");
         window.localStorage.setItem("ajw_chat_knowledge_filter", knowledgeCategoryFilter);
         if (!knowledgeFormState.group_name || knowledgeFormState.group_name === "Semua") {
@@ -1298,6 +1313,7 @@
 
     actionRoot.querySelectorAll("[data-kn-del]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         var id = String(el.getAttribute("data-kn-del") || "");
         apiDelete("/api/chat/knowledge/" + encodeURIComponent(id))
           .then(loadKnowledge)
@@ -1310,6 +1326,7 @@
 
     actionRoot.querySelectorAll("[data-reply-group]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         replyGroupFilter = String(el.getAttribute("data-reply-group") || "Umum");
         window.localStorage.setItem("ajw_chat_reply_group", replyGroupFilter);
         renderSidePanel();
@@ -1318,14 +1335,17 @@
 
     actionRoot.querySelectorAll("[data-replies-menu]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         repliesManageMenu = String(el.getAttribute("data-replies-menu") || "quick");
         window.localStorage.setItem("ajw_chat_replies_menu", repliesManageMenu);
+        renderMessages();
         renderSidePanel();
       });
     });
 
     actionRoot.querySelectorAll("[data-predict-idx]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         var idx = Number(el.getAttribute("data-predict-idx") || -1);
         var list = buildPredictions();
         var txt = idx >= 0 && idx < list.length ? String(list[idx] || "") : "";
@@ -1341,6 +1361,7 @@
     var predToggle = actionRoot.querySelector("#CHAT-PREDICT-TOGGLE");
     if (predToggle) {
       predToggle.addEventListener("change", function () {
+        lastUserActionAt = Date.now();
         predictionEnabled = Boolean(predToggle.checked);
         window.localStorage.setItem("ajw_chat_pred_toggle", predictionEnabled ? "1" : "0");
         renderSidePanel();
@@ -1350,6 +1371,7 @@
     var refToggle = actionRoot.querySelector("#CHAT-REF-TOGGLE");
     if (refToggle) {
       refToggle.addEventListener("change", function () {
+        lastUserActionAt = Date.now();
         referenceEnabled = Boolean(refToggle.checked);
         window.localStorage.setItem("ajw_chat_ref_toggle", referenceEnabled ? "1" : "0");
         renderSidePanel();
@@ -1359,6 +1381,7 @@
     var aiSaveBtn = actionRoot.querySelector("#CHAT-AI-SAVE-SETTINGS");
     if (aiSaveBtn) {
       aiSaveBtn.onclick = function () {
+        lastUserActionAt = Date.now();
         var aiEnabled = Boolean((document.getElementById("CHAT-AI-ENABLED") || {}).checked);
         var requireApproval = Boolean((document.getElementById("CHAT-AI-APPROVAL") || {}).checked);
         var provider = String((document.getElementById("CHAT-AI-PROVIDER") || {}).value || "smart");
@@ -1386,6 +1409,7 @@
     var aiAutoToggle = actionRoot.querySelector("#CHAT-AI-AUTONOMOUS");
     if (aiAutoToggle) {
       aiAutoToggle.addEventListener("change", function () {
+        lastUserActionAt = Date.now();
         autonomousEnabled = Boolean(aiAutoToggle.checked);
         window.localStorage.setItem("ajw_chat_ai_autonomous", autonomousEnabled ? "1" : "0");
         if (autonomousEnabled) startAutonomous();
@@ -1396,6 +1420,7 @@
     var aiRunNow = actionRoot.querySelector("#CHAT-AI-RUN-NOW");
     if (aiRunNow) {
       aiRunNow.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         runAutonomousCycle()
           .then(function () {
             toast("Autonomous cycle selesai.", "success");
@@ -1463,7 +1488,8 @@
   }
 
   async function runAutonomousCycle() {
-    if (!autonomousEnabled || !currentShopId || window._activeTab !== "chat") return;
+    if (!autonomousEnabled || !currentShopId || window._activeTab !== "chat" || autonomousInFlight) return;
+    autonomousInFlight = true;
     try {
       await apiPost("/api/chat/ai/autonomous/run", {
         shop_id: currentShopId,
@@ -1474,7 +1500,10 @@
         await loadMessages();
         renderMessages();
       }
-    } catch (_err) {}
+    } catch (_err) {
+    } finally {
+      autonomousInFlight = false;
+    }
   }
 
   function startAutonomous() {
@@ -1564,6 +1593,10 @@
 
   async function runRealtimePoll() {
     if (!realtimeEnabled || !currentShopId || document.hidden || window._activeTab !== "chat" || pollInFlight) return;
+    if (Date.now() - lastUserActionAt < 1200) return;
+    var activeEl = document.activeElement;
+    var typing = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA");
+    if (typing) return;
     pollInFlight = true;
     try {
       var data = await apiPost("/api/chat/realtime/poll", {
@@ -1592,10 +1625,12 @@
         lastRealtimeConvSig = convSig;
         lastRealtimeMsgSig = msgSig;
       }
-      renderHeaderState();
-      renderConversations();
-      if (selectedConversationId && activeSideTab !== "replies") renderMessages();
-      renderFilterState();
+      if (changed) {
+        renderHeaderState();
+        renderConversations();
+        if (selectedConversationId && activeSideTab !== "replies") renderMessages();
+        renderFilterState();
+      }
     } catch (_err) {
     } finally {
       pollInFlight = false;
@@ -1605,7 +1640,7 @@
   function startRealtime() {
     stopRealtime();
     runRealtimePoll();
-    realtimeTimer = setInterval(runRealtimePoll, 2500);
+    realtimeTimer = setInterval(runRealtimePoll, 3500);
   }
 
   function stopRealtime() {
@@ -1627,6 +1662,7 @@
 
     if (saveBtn) {
       saveBtn.onclick = function () {
+        lastUserActionAt = Date.now();
         var base = document.getElementById("CHAT-API-BASE");
         API_BASE = String((base && base.value) || "").trim().replace(/\/$/, "");
         window.localStorage.setItem("ajw_chat_api_base", API_BASE);
@@ -1636,6 +1672,7 @@
 
     if (oauthBtn) {
       oauthBtn.onclick = function () {
+        lastUserActionAt = Date.now();
         currentShopId = selectedShopId();
         if (!currentShopId) return toast("Isi shop_id dulu.", "warn");
         apiGet("/api/shopee/oauth/url?shop_id=" + encodeURIComponent(currentShopId))
@@ -1650,6 +1687,7 @@
 
     if (syncBtn) {
       syncBtn.onclick = function () {
+        lastUserActionAt = Date.now();
         syncAll(true)
           .then(function () {
             renderAll();
@@ -1665,6 +1703,7 @@
 
     if (realtimeBtn) {
       realtimeBtn.onclick = function () {
+        lastUserActionAt = Date.now();
         realtimeEnabled = !realtimeEnabled;
         if (realtimeEnabled) startRealtime();
         else stopRealtime();
@@ -1675,6 +1714,7 @@
     if (sendBtn) sendBtn.onclick = sendCurrentMessage;
     if (aiDraftBtn) {
       aiDraftBtn.onclick = function () {
+        lastUserActionAt = Date.now();
         if (!currentShopId) return toast("Isi shop_id dulu.", "warn");
         if (!selectedConversationId) return toast("Pilih percakapan dulu.", "warn");
         apiPost("/api/chat/ai/draft", {
@@ -1710,6 +1750,7 @@
     }
     if (shopInput) {
       shopInput.onchange = function () {
+        lastUserActionAt = Date.now();
         currentShopId = selectedShopId();
         selectedConversationId = "";
         Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false)])
@@ -1739,12 +1780,14 @@
     }
     if (ta) {
       ta.addEventListener("keydown", function (ev) {
+        lastUserActionAt = Date.now();
         if (ev.key === "Enter" && !ev.shiftKey) {
           ev.preventDefault();
           sendCurrentMessage();
         }
       });
       ta.addEventListener("paste", function (ev) {
+        lastUserActionAt = Date.now();
         var items = ev.clipboardData && ev.clipboardData.items ? ev.clipboardData.items : [];
         for (var i = 0; i < items.length; i += 1) {
           if (items[i].kind === "file") {
@@ -1761,6 +1804,7 @@
 
     document.querySelectorAll("[data-chat-filter]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         activeFilter = String(el.getAttribute("data-chat-filter") || "all");
         window.localStorage.setItem("ajw_chat_filter", activeFilter);
         renderFilterState();
@@ -1771,14 +1815,20 @@
 
     document.querySelectorAll("[data-chat-side-tab]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         activeSideTab = String(el.getAttribute("data-chat-side-tab") || "orders");
         window.localStorage.setItem("ajw_chat_side_tab", activeSideTab);
-        renderAll();
+        renderSideTabs();
+        renderMessages();
+        renderSidePanel();
+        var compose = document.querySelector(".ajw-chat-compose");
+        if (compose) compose.style.display = activeSideTab === "replies" ? "none" : "";
       });
     });
 
     document.querySelectorAll("[data-chat-emoji]").forEach(function (el) {
       el.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
         toggleEmoji();
       });
     });
@@ -1940,4 +1990,21 @@
 
   hookNavigation();
   ensureChatTabButton();
+  if (!window.__ajwChatUserActionHooked) {
+    window.__ajwChatUserActionHooked = true;
+    document.addEventListener(
+      "pointerdown",
+      function () {
+        lastUserActionAt = Date.now();
+      },
+      true
+    );
+    document.addEventListener(
+      "input",
+      function () {
+        lastUserActionAt = Date.now();
+      },
+      true
+    );
+  }
 })();
