@@ -76,11 +76,20 @@ function safeJsonParse(v, fallback) {
 }
 
 function toIsoFromUnixMaybe(ts) {
-  const n = Number(ts || 0);
-  if (!Number.isFinite(n) || n <= 0) return "";
-  const ms = n > 9999999999 ? n : n * 1000;
+  const sec = toUnixSec(ts);
+  if (!sec) return "";
+  const ms = sec * 1000;
   const d = new Date(ms);
   return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
+function toUnixSec(ts) {
+  let n = Number(ts || 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  if (n >= 1e18) n = n / 1e9;
+  else if (n >= 1e15) n = n / 1e6;
+  else if (n >= 1e12) n = n / 1e3;
+  return Math.floor(n);
 }
 
 function contentText(content) {
@@ -227,7 +236,7 @@ async function syncConversationMessages(shopId, conversationId) {
     message_type: String(m.message_type || ""),
     from_id: String(m.from_id || ""),
     to_id: String(m.to_id || ""),
-    created_timestamp: Number(m.created_timestamp || 0),
+    created_timestamp: toUnixSec(m.created_timestamp),
     content_text: summarizeMessageType(m.message_type, m.content),
     content_order_sn: extractOrderSn(m.content),
     raw_json: JSON.stringify(m || {}),
@@ -321,7 +330,7 @@ async function syncConversations(
       latest_message_id: String(c.latest_message_id || ""),
       latest_message_type: String(c.latest_message_type || ""),
       latest_message_text: summarizeMessageType(c.latest_message_type, c.latest_message_content),
-      last_message_timestamp: Number(c.last_message_timestamp || 0),
+      last_message_timestamp: toUnixSec(c.last_message_timestamp),
       latest_from_id: "",
       has_unreplied: Number(c.unread_count || 0) > 0 ? 1 : 0,
       raw_json: JSON.stringify(c || {}),
@@ -988,7 +997,8 @@ app.get("/api/chat/debug/shopee-raw", async (req, res) => {
       unread_count: Number(c.unread_count || 0),
       latest_message_type: String(c.latest_message_type || ""),
       latest_message_content: summarizeMessageType(c.latest_message_type, c.latest_message_content),
-      last_message_timestamp: Number(c.last_message_timestamp || 0),
+      last_message_timestamp_raw: Number(c.last_message_timestamp || 0),
+      last_message_timestamp: toUnixSec(c.last_message_timestamp),
       last_message_time_iso: toIsoFromUnixMaybe(c.last_message_timestamp)
     }));
     res.json({

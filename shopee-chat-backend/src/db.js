@@ -36,6 +36,18 @@ function defaultState() {
   };
 }
 
+function normalizeUnixTs(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  // ns -> s
+  if (n >= 1e18) return Math.floor(n / 1e9);
+  // us -> s
+  if (n >= 1e15) return Math.floor(n / 1e6);
+  // ms -> s
+  if (n >= 1e12) return Math.floor(n / 1e3);
+  return Math.floor(n);
+}
+
 let state = defaultState();
 if (persistenceEnabled && fs.existsSync(absDbPath)) {
   try {
@@ -181,7 +193,8 @@ export async function upsertConversations(rows) {
   const clean = (rows || []).map((row) => ({
     ...row,
     conversation_id: String(row.conversation_id || ""),
-    shop_id: String(row.shop_id || "")
+    shop_id: String(row.shop_id || ""),
+    last_message_timestamp: normalizeUnixTs(row.last_message_timestamp)
   }));
   if (!clean.length) return;
   if (useSupabase) {
@@ -221,7 +234,8 @@ export async function upsertMessages(rows) {
     ...row,
     message_id: String(row.message_id || ""),
     conversation_id: String(row.conversation_id || ""),
-    shop_id: String(row.shop_id || "")
+    shop_id: String(row.shop_id || ""),
+    created_timestamp: normalizeUnixTs(row.created_timestamp)
   }));
   if (!clean.length) return;
   if (useSupabase) {
@@ -283,9 +297,12 @@ export async function listConversationsWithStats({ shopId = "", limit = 50, offs
     return sbSelect("shopee_chat_conversations", query);
   }
 
-  const rows = Object.values(state.conversations).filter((r) =>
-    shopId ? String(r.shop_id) === String(shopId) : true
-  );
+  const rows = Object.values(state.conversations)
+    .filter((r) => (shopId ? String(r.shop_id) === String(shopId) : true))
+    .map((r) => ({
+      ...r,
+      last_message_timestamp: normalizeUnixTs(r.last_message_timestamp)
+    }));
   rows.sort((a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0));
   return rows.slice(offset, offset + limit);
 }
@@ -301,9 +318,12 @@ export async function listMessages(conversationId, limit = 100, order = "desc") 
     });
   }
 
-  const rows = Object.values(state.messages).filter(
-    (r) => String(r.conversation_id) === String(conversationId)
-  );
+  const rows = Object.values(state.messages)
+    .filter((r) => String(r.conversation_id) === String(conversationId))
+    .map((r) => ({
+      ...r,
+      created_timestamp: normalizeUnixTs(r.created_timestamp)
+    }));
   rows.sort((a, b) =>
     desc
       ? Number(b.created_timestamp || 0) - Number(a.created_timestamp || 0)
