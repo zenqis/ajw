@@ -9,6 +9,7 @@ import {
   getTokenByShopId,
   isSupabaseEnabled,
   insertWebhookEvent,
+  listWebhookEvents,
   listConversationsWithStats,
   listMessages,
   listOrdersByConversation,
@@ -328,6 +329,50 @@ async function syncConversations(
   }
 
   return conversations.length;
+}
+
+async function fetchConversationsRaw(shopId, { pageSize = 100, maxPages = 6 } = {}) {
+  const accessToken = await ensureAccessToken(shopId);
+  const path = "/api/v2/sellerchat/get_conversation_list";
+  const rows = [];
+  const seen = new Set();
+  let offset = 0;
+  let page = 0;
+  let keep = true;
+
+  while (keep && page < Math.max(1, Number(maxPages || 1))) {
+    const ts = Math.floor(Date.now() / 1000);
+    const query = buildSignedQuery(path, ts, { accessToken, shopId });
+    const queryObj = Object.fromEntries(new URLSearchParams(query));
+    queryObj.direction = "latest";
+    queryObj.type = "all";
+    queryObj.page_size = String(Math.min(100, Math.max(10, Number(pageSize || 100))));
+    queryObj.offset = String(Math.max(0, Number(offset || 0)));
+
+    const data = await callShopee(path, "GET", { query: queryObj });
+    if (data.error) throw new Error(`${data.error}: ${data.message || "get_conversation_list gagal"}`);
+    const response = (data && data.response) || {};
+    const chunk = Array.isArray(response.conversations) ? response.conversations : [];
+    for (const c of chunk) {
+      const id = String(c && c.conversation_id ? c.conversation_id : "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      rows.push(c);
+    }
+
+    const nextOffset = Number(response.next_offset || response.offset || 0);
+    const hasNext =
+      Boolean(response.has_more || response.has_next_page) &&
+      Number.isFinite(nextOffset) &&
+      nextOffset > offset &&
+      chunk.length > 0;
+    keep = hasNext;
+    offset = nextOffset;
+    page += 1;
+  }
+
+  rows.sort((a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0));
+  return rows;
 }
 
 async function syncOrdersByRefs(shopId, conversationId, orderRefs) {
@@ -887,6 +932,61 @@ app.get("/api/chat/products", async (req, res) => {
     }
     const rows = await listProductsByShop({ shopId, search, limit });
     res.json({ ok: true, rows });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.get("/api/chat/debug/push-last", async (req, res) => {
+  try {
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
+    const rows = await listWebhookEvents({ limit });
+    const parsed = rows.map((r) => {
+      const payload = safeJsonParse(r.payload || "{}", {});
+      return {
+        id: r.id,
+        event_key: r.event_key || "",
+        created_at: r.created_at || "",
+        shop_id: String(payload.shop_id || payload.shopid || ""),
+        conversation_id: String(payload.conversation_id || ""),
+        message_id: String(payload.message_id || ""),
+        push_code: String(payload.code || payload.push_code || payload.type || "")
+      };
+    });
+    res.json({ ok: true, rows: parsed });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.get("/api/chat/debug/shopee-raw", async (req, res) => {
+  try {
+    const shopId = String(req.query.shop_id || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    const maxPages = Math.min(12, Math.max(1, Number(req.query.max_pages || 6)));
+    const pageSize = Math.min(100, Math.max(10, Number(req.query.page_size || 100)));
+    const rows = await fetchConversationsRaw(shopId, { maxPages, pageSize });
+    const compact = rows.slice(0, 50).map((c) => ({
+      conversation_id: String(c.conversation_id || ""),
+      to_name: c.to_name || "",
+      to_id: String(c.to_id || ""),
+      unread_count: Number(c.unread_count || 0),
+      latest_message_type: String(c.latest_message_type || ""),
+      latest_message_content: summarizeMessageType(c.latest_message_type, c.latest_message_content),
+      last_message_timestamp: Number(c.last_message_timestamp || 0),
+      last_message_time_iso:
+        Number(c.last_message_timestamp || 0) > 0
+          ? new Date(Number(c.last_message_timestamp || 0) * 1000).toISOString()
+          : ""
+    }));
+    res.json({
+      ok: true,
+      shop_id: shopId,
+      total_raw: rows.length,
+      newest_timestamp: compact[0] ? compact[0].last_message_timestamp : 0,
+      newest_time_iso: compact[0] ? compact[0].last_message_time_iso : "",
+      rows: compact
+    });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
   }

@@ -252,6 +252,25 @@ export async function insertWebhookEvent(eventKey, payload, createdAt) {
   persist();
 }
 
+export async function listWebhookEvents({ limit = 50, eventKey = "" } = {}) {
+  const safeLimit = Math.min(500, Math.max(1, Number(limit || 50)));
+  const key = String(eventKey || "").trim();
+  if (useSupabase) {
+    const query = {
+      select: "*",
+      order: "created_at.desc",
+      limit: safeLimit
+    };
+    if (key) query.event_key = `eq.${key}`;
+    return sbSelect("shopee_chat_webhook_events", query);
+  }
+
+  let rows = state.webhook_events.slice(0, safeLimit * 3);
+  if (key) rows = rows.filter((r) => String(r.event_key || "") === key);
+  rows.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  return rows.slice(0, safeLimit);
+}
+
 export async function listConversationsWithStats({ shopId = "", limit = 50, offset = 0 } = {}) {
   if (useSupabase) {
     const query = {
