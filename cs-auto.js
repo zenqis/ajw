@@ -149,11 +149,11 @@
       '.cs-chat-hdr{padding:9px 12px;border-bottom:1px solid var(--bd,#e0e0e0);display:flex;align-items:center;gap:9px;background:var(--bg3,#fafafa)}',
       '.cs-chat-hdr .cs-ava{width:32px;height:32px;border-radius:50%;background:#0D2E5A;color:#fff;display:flex;align-items:center;justify-content:center;font:bold 12px Arial}',
       '.cs-msgs{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:7px;background:var(--bg1,#fff);min-height:0}',
-      '.cs-msgs .cs-msg{max-width:75%;padding:7px 11px;border-radius:11px;font:12px Arial;line-height:1.45;word-wrap:break-word;white-space:pre-wrap}',
-      '.cs-msgs .cs-msg.inc{background:var(--bg2,#f0f0f0);color:var(--fg,#222);align-self:flex-start;border-radius:11px 11px 11px 2px}',
+      '.cs-msgs .cs-msg{display:block;max-width:75%;padding:8px 11px;border-radius:11px;font:12px Arial;line-height:1.45;word-wrap:break-word;white-space:pre-wrap;letter-spacing:.01em}',
+      '.cs-msgs .cs-msg.inc{background:#1f232b;color:#E9EEF8;align-self:flex-start;border:1px solid #2d3442;border-radius:11px 11px 11px 2px}',
       '.cs-msgs .cs-msg.out{background:#1565C0;color:#fff;align-self:flex-end;border-radius:11px 11px 2px 11px}',
       '.cs-msgs .cs-msg.ai{background:#2E7D32;color:#fff;align-self:flex-end;border-radius:11px 11px 2px 11px}',
-      '.cs-msgs .cs-msg .cs-mt{font:10px Arial;opacity:.75;margin-top:2px}',
+      '.cs-msgs .cs-msg .cs-mt{font:10px Arial;opacity:.8;margin-top:4px;color:rgba(255,255,255,.72)}',
       '.cs-comp{border-top:1px solid var(--bd,#e0e0e0);padding:7px 9px;display:flex;flex-direction:column;gap:5px;background:var(--bg2,#fff)}',
       '.cs-comp .cs-row{display:flex;gap:5px;align-items:center;flex-wrap:wrap}',
       '.cs-comp textarea{flex:1;min-height:44px;max-height:140px;padding:6px 9px;border:1px solid var(--bd,#ccc);border-radius:6px;font:12px Arial;background:var(--bg1,#fff);color:var(--fg,#222);resize:vertical}',
@@ -207,6 +207,77 @@
       clearTimeout(t);
       t = setTimeout(function(){ fn.apply(c,a); }, ms);
     };
+  }
+
+  function decodeHtmlEntities(s){
+    if (!s) return '';
+    var txt = String(s);
+    return txt
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+  }
+
+  function stripHtml(s){
+    if (!s) return '';
+    var txt = String(s);
+    txt = txt.replace(/<br\s*\/?>/gi, '\n');
+    txt = txt.replace(/<\/div>/gi, '\n');
+    txt = txt.replace(/<div[^>]*>/gi, '');
+    txt = txt.replace(/<[^>]+>/g, '');
+    return decodeHtmlEntities(txt);
+  }
+
+  function normalizeText(s){
+    var txt = stripHtml(s || '');
+    txt = txt.replace(/\r/g, '');
+    txt = txt.replace(/\n{3,}/g, '\n\n');
+    return txt.trim();
+  }
+
+  function parseRaw(raw){
+    if (!raw) return null;
+    if (typeof raw === 'object') return raw;
+    try { return JSON.parse(raw); } catch(e){ return null; }
+  }
+
+  function extractMessageText(m){
+    if (!m) return '';
+    var t = '';
+    if (m.content_text) t = m.content_text;
+    if (!t && m.content && typeof m.content === 'object') t = m.content.text || m.content.item_name || '';
+    if (!t && m.message) t = m.message;
+    if (!t && m.text) t = m.text;
+    if (!t && m.latest_message_text) t = m.latest_message_text;
+    if (!t && m.latest_message_content && typeof m.latest_message_content === 'object') t = m.latest_message_content.text || '';
+
+    if (!t) {
+      var r = parseRaw(m.raw_json);
+      if (r && r.content) {
+        if (typeof r.content === 'string') t = r.content;
+        else if (typeof r.content === 'object') t = r.content.text || r.content.item_name || r.content.notification_for_sender || r.content.notification_for_receiver || '';
+      }
+      if (!t && r && r.latest_message_content && typeof r.latest_message_content === 'object') t = r.latest_message_content.text || '';
+    }
+
+    t = normalizeText(t);
+    if (!t) {
+      if (m.message_type === 'item') return '[Produk]';
+      if (m.message_type === 'bundle_message') return '[Bundle]';
+      if (m.message_type === 'rating_card') return '[Rating]';
+      if (m.message_type === 'notification') return '[Notifikasi]';
+      return '[' + String(m.message_type || 'pesan') + ']';
+    }
+    return t;
+  }
+
+  function previewText(m){
+    var t = extractMessageText(m);
+    if (!t) return '-';
+    return t.replace(/\s+/g, ' ').trim();
   }
 
   function pickList(payload){
@@ -393,8 +464,7 @@
       var id = c.conversation_id || c.id;
       var name = c.to_name || c.username || c.name || id;
       var avatar = c.to_avatar || c.avatar;
-      var preview = (c.latest_message_content && (c.latest_message_content.text || c.latest_message_content.item_name)) || c.last_preview || c.last_message || '';
-      if (typeof preview !== 'string') preview = JSON.stringify(preview);
+      var preview = c.latest_message_text || c.last_preview || c.last_message || previewText(c);
       var ts = c.last_message_timestamp || c.last_message_time || c.updated_at;
       var unread = c.unread_count || 0;
       var active = (id === S.activeConvId) ? ' active' : '';
@@ -402,7 +472,7 @@
         '<div class="cs-ava">'+(avatar?'<img src="'+esc(avatar)+'" onerror="this.replaceWith(document.createTextNode(\''+initials(name)+'\'))">':esc(initials(name)))+'</div>'+
         '<div class="cs-inf">'+
           '<div class="cs-nm"><span>'+esc(name)+(unread?'<span class="cs-badge">'+unread+'</span>':'')+'</span><span class="cs-tm">'+esc(fmtTime(ts))+'</span></div>'+
-          '<div class="cs-pv">'+esc(String(preview).slice(0,80))+'</div>'+
+          '<div class="cs-pv">'+esc(String(preview).slice(0,100))+'</div>'+
         '</div>'+
       '</div>';
     }
@@ -434,8 +504,7 @@
       else if (fromId) isSeller = fromId === sellerId;
       var inc = !isSeller;
       var cls = inc ? 'inc' : (m.source === 'ai' || m.by_ai ? 'ai' : 'out');
-      var text = (m.content && (m.content.text || m.content.item_name)) || m.message || m.text || '';
-      if (typeof text !== 'string') text = JSON.stringify(text);
+      var text = extractMessageText(m);
       var ts = m.created_timestamp || m.timestamp || m.created_at;
       html += '<div class="cs-msg '+cls+'">'+esc(text)+'<div class="cs-mt">'+esc(fmtTime(ts))+(cls==='ai'?' • AI':'')+'</div></div>';
     }
