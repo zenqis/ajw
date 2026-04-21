@@ -20,6 +20,9 @@
   var attachmentQueue = [];
   var productSearch = "";
   var emojiOpen = false;
+  var pollInFlight = false;
+  var lastRealtimeConvSig = "";
+  var lastRealtimeMsgSig = "";
   var savedBodyStyle = null;
   var EMOJIS = ["🙂", "😊", "🙏", "👍", "👌", "🔥", "⭐", "🎣", "📦", "🚚", "💬", "❤️"];
 
@@ -216,7 +219,7 @@
   }
 
   async function loadConversations() {
-    var qs = "?limit=120&recent_days=90";
+    var qs = "?limit=120&recent_days=90&sync=1";
     if (currentShopId) qs += "&shop_id=" + encodeURIComponent(currentShopId);
     if (activeFilter) qs += "&filter=" + encodeURIComponent(activeFilter);
     var data = await apiGet("/api/chat/conversations" + qs);
@@ -290,15 +293,36 @@
 
   async function openConversation(conversationId) {
     selectedConversationId = String(conversationId || "");
-    await apiPost("/api/chat/sync", {
+    messagesCache = [];
+    ordersCache = [];
+    renderHeaderState();
+    renderConversations();
+    renderMessages();
+    renderSidePanel();
+    scrollThreadToBottom();
+
+    try {
+      await Promise.all([loadMessages(), loadOrders(false)]);
+      renderMessages();
+      renderSidePanel();
+      scrollThreadToBottom();
+    } catch (_e) {}
+
+    apiPost("/api/chat/sync", {
       shop_id: selectedShopId(),
       conversation_id: selectedConversationId
-    });
-    await loadMessages();
-    await loadOrders(true);
-    await loadConversations();
-    renderAll();
-    scrollThreadToBottom();
+    })
+      .then(function () {
+        return Promise.all([loadMessages(), loadOrders(true), loadConversations()]);
+      })
+      .then(function () {
+        renderHeaderState();
+        renderConversations();
+        renderMessages();
+        renderSidePanel();
+        scrollThreadToBottom();
+      })
+      .catch(function (_err) {});
   }
 
   function scrollThreadToBottom() {
@@ -782,18 +806,43 @@
   }
 
   async function runRealtimePoll() {
-    if (!realtimeEnabled || !currentShopId || document.hidden || window._activeTab !== "chat") return;
+    if (!realtimeEnabled || !currentShopId || document.hidden || window._activeTab !== "chat" || pollInFlight) return;
+    pollInFlight = true;
     try {
       var data = await apiPost("/api/chat/realtime/poll", {
         shop_id: currentShopId,
         conversation_id: selectedConversationId || ""
       });
-      conversationsCache = (data.conversations || []).sort(function (a, b) {
+      var nextConvs = (data.conversations || []).sort(function (a, b) {
         return Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0);
       });
-      if (selectedConversationId) messagesCache = data.messages || [];
-      renderAll();
-    } catch (_err) {}
+      var convSig = nextConvs
+        .slice(0, 20)
+        .map(function (r) {
+          return [r.conversation_id, r.last_message_timestamp, r.unread_count, r.has_unreplied].join(":");
+        })
+        .join("|");
+      var nextMsgs = selectedConversationId ? data.messages || [] : messagesCache;
+      var msgSig = nextMsgs.length
+        ? [nextMsgs.length, nextMsgs[nextMsgs.length - 1].message_id || "", nextMsgs[nextMsgs.length - 1].created_timestamp || 0].join(":")
+        : "0";
+      var changed = convSig !== lastRealtimeConvSig || msgSig !== lastRealtimeMsgSig;
+
+      conversationsCache = nextConvs;
+      if (selectedConversationId) messagesCache = nextMsgs;
+
+      if (changed) {
+        lastRealtimeConvSig = convSig;
+        lastRealtimeMsgSig = msgSig;
+        renderHeaderState();
+        renderConversations();
+        renderMessages();
+        renderFilterState();
+      }
+    } catch (_err) {
+    } finally {
+      pollInFlight = false;
+    }
   }
 
   function startRealtime() {

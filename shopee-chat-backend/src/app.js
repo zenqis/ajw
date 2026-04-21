@@ -46,6 +46,7 @@ const supabaseKey = String(
     ""
 ).trim();
 const supabaseBucket = String(process.env.SUPABASE_STORAGE_BUCKET || "chat-media").trim();
+const lastOrderSyncAt = new Map();
 
 app.use(cors());
 app.use(express.json({ limit: "18mb" }));
@@ -251,7 +252,10 @@ async function syncConversationMessages(shopId, conversationId) {
   return messages.length;
 }
 
-async function syncConversations(shopId) {
+async function syncConversations(
+  shopId,
+  { syncMessages = true, hotLimit = 12, pageSize = 50 } = {}
+) {
   const accessToken = await ensureAccessToken(shopId);
   const path = "/api/v2/sellerchat/get_conversation_list";
   const ts = Math.floor(Date.now() / 1000);
@@ -259,7 +263,7 @@ async function syncConversations(shopId) {
   const queryObj = Object.fromEntries(new URLSearchParams(query));
   queryObj.direction = "latest";
   queryObj.type = "all";
-  queryObj.page_size = "50";
+  queryObj.page_size = String(Math.min(100, Math.max(10, Number(pageSize || 50))));
 
   const data = await callShopee(path, "GET", { query: queryObj });
   if (data.error) throw new Error(`${data.error}: ${data.message || "get_conversation_list gagal"}`);
@@ -285,9 +289,11 @@ async function syncConversations(shopId) {
     }))
   );
 
-  // Keep realtime snappy: sync message detail only for hottest conversations.
-  for (const c of conversations.slice(0, 12)) {
-    await syncConversationMessages(shopId, c.conversation_id);
+  if (syncMessages) {
+    // Keep realtime snappy: sync message detail only for hottest conversations.
+    for (const c of conversations.slice(0, Math.max(0, Number(hotLimit || 0)))) {
+      await syncConversationMessages(shopId, c.conversation_id);
+    }
   }
 
   return conversations.length;
@@ -659,7 +665,7 @@ app.post("/api/shopee/live-push", jsonFromRaw, async (req, res) => {
     if (shopId && conversationId) {
       await syncConversationMessages(shopId, conversationId);
     } else if (shopId) {
-      await syncConversations(shopId);
+      await syncConversations(shopId, { syncMessages: false, pageSize: 100 });
     }
   } catch (err) {
     console.error("live-push sync warning:", err.message || err);
@@ -674,7 +680,7 @@ app.post("/api/chat/sync", async (req, res) => {
     if (!shopId) throw new Error("shop_id wajib diisi");
     const synced = conversationId
       ? await syncConversationMessages(shopId, conversationId)
-      : await syncConversations(shopId);
+      : await syncConversations(shopId, { syncMessages: true, hotLimit: 12, pageSize: 100 });
 
     let productsSynced = 0;
     let ordersSynced = 0;
@@ -703,10 +709,16 @@ app.post("/api/chat/realtime/poll", async (req, res) => {
     const conversationId = String(req.body.conversation_id || "").trim();
     if (!shopId) throw new Error("shop_id wajib");
 
+    // Always refresh conversation list so newest buyers bubble up immediately.
+    await syncConversations(shopId, { syncMessages: false, pageSize: 100 });
     if (conversationId) await syncConversationMessages(shopId, conversationId);
-    else await syncConversations(shopId);
     try {
-      await syncLatestShopOrders(shopId);
+      const now = Date.now();
+      const last = Number(lastOrderSyncAt.get(shopId) || 0);
+      if (!last || now - last > 60 * 1000) {
+        await syncLatestShopOrders(shopId);
+        lastOrderSyncAt.set(shopId, now);
+      }
     } catch (err) {
       console.error("poll order sync warning:", err.message || err);
     }
@@ -725,6 +737,14 @@ app.get("/api/chat/conversations", async (req, res) => {
     const offset = Math.max(0, Number(req.query.offset || 0));
     const shopId = String(req.query.shop_id || "");
     const filter = String(req.query.filter || "all").toLowerCase();
+    const sync = String(req.query.sync || "") === "1";
+    if (sync && shopId) {
+      try {
+        await syncConversations(shopId, { syncMessages: false, pageSize: 100 });
+      } catch (err) {
+        console.error("conversation sync warning:", err.message || err);
+      }
+    }
     const recentDays = Math.min(3650, Math.max(1, Number(req.query.recent_days || 90)));
     const minTs = Math.floor(Date.now() / 1000) - recentDays * 24 * 60 * 60;
     let rows = await listConversationsWithStats({ shopId, limit: 300, offset: 0 });
