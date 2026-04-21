@@ -60,6 +60,7 @@ const openAiModel = String(process.env.OPENAI_MODEL || "gpt-4o-mini").trim();
 const anthropicKey = String(process.env.ANTHROPIC_API_KEY || "").trim();
 const anthropicModel = String(process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest").trim();
 const lastOrderSyncAt = new Map();
+const autonomousRunLock = new Map();
 
 app.use(cors());
 app.use(express.json({ limit: "18mb" }));
@@ -803,6 +804,13 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
     }));
   const quickReplies = await listQuickReplies({ shopId, limit: 120 });
   const knowledge = await listAiKnowledge({ shopId, limit: 240 });
+  const recentOrders = await listOrdersByConversation({ shopId, conversationId, limit: 8 });
+  const searchTerm = String(incomingText || "")
+    .split(/\s+/)
+    .filter((w) => w && w.length >= 3)
+    .slice(0, 5)
+    .join(" ");
+  const productHints = await listProductsByShop({ shopId, search: searchTerm, limit: 25 });
   const mergedKnowledge = [
     ...knowledge,
     ...quickReplies.map((q, idx) => ({
@@ -818,6 +826,16 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
   let text = "";
   let provider = String(settings.provider || "smart").toLowerCase();
   let model = String(settings.model || "");
+  const orderBrief = recentOrders.slice(0, 3).map((o) => ({
+    order_sn: o.order_sn,
+    status: o.order_status,
+    total_amount: o.total_amount
+  }));
+  const productBrief = productHints.slice(0, 8).map((p) => ({
+    item_name: p.item_name,
+    sku: p.sku,
+    stock: p.stock
+  }));
 
   if (provider === "openai" && openAiKey) {
     try {
@@ -825,7 +843,12 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
         incomingText,
         historyRows,
         knowledgeRows: selectedKnowledge,
-        preset: settings.prompt_preset
+        preset:
+          String(settings.prompt_preset || "") +
+          "\nKonteks order: " +
+          JSON.stringify(orderBrief) +
+          "\nKonteks produk: " +
+          JSON.stringify(productBrief)
       });
     } catch (_err) {
       provider = "smart";
@@ -836,7 +859,12 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
         incomingText,
         historyRows,
         knowledgeRows: selectedKnowledge,
-        preset: settings.prompt_preset
+        preset:
+          String(settings.prompt_preset || "") +
+          "\nKonteks order: " +
+          JSON.stringify(orderBrief) +
+          "\nKonteks produk: " +
+          JSON.stringify(productBrief)
       });
     } catch (_err) {
       provider = "smart";
@@ -1118,6 +1146,7 @@ app.post("/api/chat/conversation/read", async (req, res) => {
     await updateConversationStats(conversationId, {
       shop_id: shopId,
       unread_count: 0,
+      has_unreplied: 0,
       updated_at: nowIso()
     });
     res.json({ ok: true });
@@ -1259,7 +1288,8 @@ app.get("/api/chat/quick-replies", async (req, res) => {
   try {
     const shopId = String(req.query.shop_id || "").trim();
     if (!shopId) throw new Error("shop_id wajib");
-    const rows = await listQuickReplies({ shopId, limit: 200 });
+    const limit = Math.min(5000, Math.max(1, Number(req.query.limit || 2000)));
+    const rows = await listQuickReplies({ shopId, limit });
     res.json({ ok: true, rows });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
@@ -1303,7 +1333,7 @@ app.get("/api/chat/knowledge", async (req, res) => {
     if (!shopId) throw new Error("shop_id wajib");
     const groupName = String(req.query.group_name || "").trim();
     const search = String(req.query.search || "").trim();
-    const limit = Math.min(400, Math.max(1, Number(req.query.limit || 220)));
+    const limit = Math.min(5000, Math.max(1, Number(req.query.limit || 2000)));
     const rows = await listAiKnowledge({ shopId, groupName, search, limit });
     res.json({ ok: true, rows });
   } catch (err) {
@@ -1528,6 +1558,82 @@ app.post("/api/chat/auto-reply", async (req, res) => {
     }
 
     res.json({ ok: true, dry_run: dryRun, count: results.length, rows: results });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/ai/autonomous/run", async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const limit = Math.min(30, Math.max(1, Number(req.body.limit || 5)));
+    const dryRun = Boolean(req.body.dry_run);
+    if (!shopId) throw new Error("shop_id wajib");
+
+    if (autonomousRunLock.get(shopId)) {
+      return res.json({ ok: true, busy: true, rows: [] });
+    }
+    autonomousRunLock.set(shopId, true);
+    try {
+      await syncConversations(shopId, {
+        syncMessages: true,
+        hotLimit: 40,
+        listType: "unread",
+        pageSize: 100,
+        maxPages: 4
+      });
+
+      const convs = (await listConversationsWithStats({ shopId, limit: 300, offset: 0 }))
+        .filter((c) => Number(c.unread_count || 0) > 0 || Number(c.has_unreplied || 0) > 0)
+        .sort((a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0))
+        .slice(0, limit);
+
+      const rows = [];
+      for (const conv of convs) {
+        const conversationId = String(conv.conversation_id || "");
+        if (!conversationId) continue;
+        await syncConversationMessages(shopId, conversationId);
+        const incomingText = await latestIncomingText(conversationId, shopId);
+        if (!incomingText) continue;
+
+        const ai = await generateAiDraft({ shopId, conversationId, incomingText });
+        const draft = await upsertAiDraft({
+          shop_id: shopId,
+          conversation_id: conversationId,
+          source_text: incomingText,
+          draft_text: ai.text,
+          provider: ai.provider,
+          model: ai.model,
+          knowledge_refs: JSON.stringify(ai.refs || []),
+          status: dryRun ? "draft" : "sent",
+          created_at: nowIso(),
+          updated_at: nowIso()
+        });
+
+        if (!dryRun) {
+          await sendShopeeText(shopId, conversationId, ai.text);
+          await updateConversationStats(conversationId, {
+            shop_id: shopId,
+            unread_count: 0,
+            has_unreplied: 0,
+            latest_from_id: String(shopId),
+            updated_at: nowIso()
+          });
+        }
+
+        rows.push({
+          conversation_id: conversationId,
+          to_name: conv.to_name || "",
+          incoming_text: incomingText,
+          reply: ai.text,
+          draft_id: draft.id
+        });
+      }
+
+      res.json({ ok: true, dry_run: dryRun, count: rows.length, rows });
+    } finally {
+      autonomousRunLock.delete(shopId);
+    }
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
   }

@@ -22,6 +22,18 @@
   var aiSettings = null;
   var repliesManageMenu = window.localStorage.getItem("ajw_chat_replies_menu") || "quick";
   var knowledgeCategoryFilter = window.localStorage.getItem("ajw_chat_knowledge_filter") || "Semua";
+  var quickFormState = safeJson(window.localStorage.getItem("ajw_chat_quick_form"), {
+    keyword: "",
+    title: "",
+    content: ""
+  });
+  var knowledgeFormState = safeJson(window.localStorage.getItem("ajw_chat_knowledge_form"), {
+    keyword: "",
+    group_name: "",
+    template: ""
+  });
+  var autonomousEnabled = window.localStorage.getItem("ajw_chat_ai_autonomous") === "1";
+  var autonomousTimer = null;
   var replyGroupFilter = window.localStorage.getItem("ajw_chat_reply_group") || "Umum";
   var predictionEnabled = window.localStorage.getItem("ajw_chat_pred_toggle") !== "0";
   var referenceEnabled = window.localStorage.getItem("ajw_chat_ref_toggle") !== "0";
@@ -335,7 +347,7 @@
       quickRepliesCache = [];
       return;
     }
-    var data = await apiGet("/api/chat/quick-replies?shop_id=" + encodeURIComponent(currentShopId));
+    var data = await apiGet("/api/chat/quick-replies?shop_id=" + encodeURIComponent(currentShopId) + "&limit=2000");
     quickRepliesCache = data.rows || [];
   }
 
@@ -344,7 +356,7 @@
       knowledgeCache = [];
       return;
     }
-    var data = await apiGet("/api/chat/knowledge?shop_id=" + encodeURIComponent(currentShopId) + "&limit=300");
+    var data = await apiGet("/api/chat/knowledge?shop_id=" + encodeURIComponent(currentShopId) + "&limit=2000");
     knowledgeCache = data.rows || [];
   }
 
@@ -973,9 +985,9 @@
         '<div class="ajw-reply-main">' +
         '<div class="ajw-chat-card">' +
         '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Balasan Cepat</div>' +
-        '<input id="CHAT-QR-KEYWORD" class="fi" placeholder="Keyword pemicu (opsional)">' +
-        '<input id="CHAT-QR-TITLE" class="fi" placeholder="Judul template" style="margin-top:8px">' +
-        '<textarea id="CHAT-QR-CONTENT" class="fi" style="margin-top:8px;min-height:100px" placeholder="Template jawaban..."></textarea>' +
+        '<input id="CHAT-QR-KEYWORD" class="fi" placeholder="Keyword pemicu (opsional)" value="' + escSafe(quickFormState.keyword || "") + '">' +
+        '<input id="CHAT-QR-TITLE" class="fi" placeholder="Judul template" style="margin-top:8px" value="' + escSafe(quickFormState.title || "") + '">' +
+        '<textarea id="CHAT-QR-CONTENT" class="fi" style="margin-top:8px;min-height:100px" placeholder="Template jawaban...">' + escSafe(quickFormState.content || "") + "</textarea>" +
         '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-QR-ADD-FORM" class="btnp">Simpan Template</button></div>' +
         "</div>" +
         "</div></div>"
@@ -1005,16 +1017,16 @@
         "</div>" +
         '<div class="ajw-chat-card">' +
         '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Referensi Kata Kunci</div>' +
-        '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan">' +
+        '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan" value="' + escSafe(knowledgeFormState.keyword || "") + '">' +
         '<select id="CHAT-KN-GROUP" class="fi" style="margin-top:8px">' +
         catOptions
           .map(function (cat) {
-            var selected = cat === activeCat ? " selected" : "";
+            var selected = cat === (knowledgeFormState.group_name || activeCat) ? " selected" : "";
             return '<option value="' + escSafe(cat) + '"' + selected + ">" + escSafe(cat) + "</option>";
           })
           .join("") +
         "</select>" +
-        '<textarea id="CHAT-KN-TEMPLATE" class="fi" style="margin-top:8px;min-height:100px" placeholder="Jawaban acuan untuk AI..."></textarea>' +
+        '<textarea id="CHAT-KN-TEMPLATE" class="fi" style="margin-top:8px;min-height:100px" placeholder="Jawaban acuan untuk AI...">' + escSafe(knowledgeFormState.template || "") + "</textarea>" +
         '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-KN-ADD" class="btnp">Simpan Referensi</button></div>' +
         "</div>" +
         (filteredKnowledge.length
@@ -1047,14 +1059,16 @@
         '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
         '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-ENABLED" ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "checked" : "") + "> AI Aktif</label>" +
         '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-APPROVAL" ' + (!aiSettings || Number(aiSettings.require_approval || 0) ? "checked" : "") + "> Perlu Persetujuan Kirim</label>" +
+        '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-AUTONOMOUS" ' + (autonomousEnabled ? "checked" : "") + "> Autonomous (Auto baca + balas)</label>" +
         '<select id="CHAT-AI-PROVIDER" class="fi" style="max-width:150px">' +
         '<option value="smart"' + (aiSettings && aiSettings.provider === "smart" ? " selected" : "") + ">Smart</option>" +
         '<option value="openai"' + (aiSettings && aiSettings.provider === "openai" ? " selected" : "") + ">OpenAI</option>" +
         '<option value="claude"' + (aiSettings && aiSettings.provider === "claude" ? " selected" : "") + ">Claude</option>" +
         "</select>" +
         '<button id="CHAT-AI-SAVE-SETTINGS" class="btns">Simpan Mode AI</button>' +
+        '<button id="CHAT-AI-RUN-NOW" class="btnp">Run Sekarang</button>' +
         "</div>" +
-        '<div style="font-size:11px;color:var(--tx3);margin-top:8px">Draft AI direview dulu, lalu kirim manual supaya aman.</div>' +
+        '<div style="font-size:11px;color:var(--tx3);margin-top:8px">Autonomous memproses percakapan unread terbaru dulu, baca histori chat, lalu balas otomatis sesuai knowledge + produk.</div>' +
         "</div>" +
         "</div></div>"
       );
@@ -1186,11 +1200,24 @@
           });
           await loadKnowledge();
         }
+        quickFormState = { keyword: "", title: "", content: "" };
+        persistQuickFormState();
         await loadQuickReplies();
         renderSidePanel();
         toast("Balasan cepat tersimpan.", "success");
       };
     }
+
+    ["CHAT-QR-KEYWORD", "CHAT-QR-TITLE", "CHAT-QR-CONTENT"].forEach(function (id) {
+      var el = actionRoot.querySelector("#" + id);
+      if (!el) return;
+      el.addEventListener("input", function () {
+        quickFormState.keyword = String((actionRoot.querySelector("#CHAT-QR-KEYWORD") || {}).value || "");
+        quickFormState.title = String((actionRoot.querySelector("#CHAT-QR-TITLE") || {}).value || "");
+        quickFormState.content = String((actionRoot.querySelector("#CHAT-QR-CONTENT") || {}).value || "");
+        persistQuickFormState();
+      });
+    });
 
     actionRoot.querySelectorAll("[data-qr-use]").forEach(function (el) {
       el.addEventListener("click", function () {
@@ -1233,15 +1260,38 @@
           priority: 6
         });
         await loadKnowledge();
+        knowledgeFormState = { keyword: "", group_name: groupName || knowledgeCategoryFilter || "General", template: "" };
+        persistKnowledgeFormState();
         renderSidePanel();
         toast("Pusat informasi tersimpan.", "success");
       };
     }
 
+    ["CHAT-KN-KEYWORD", "CHAT-KN-GROUP", "CHAT-KN-TEMPLATE"].forEach(function (id) {
+      var el = actionRoot.querySelector("#" + id);
+      if (!el) return;
+      el.addEventListener("input", function () {
+        knowledgeFormState.keyword = String((actionRoot.querySelector("#CHAT-KN-KEYWORD") || {}).value || "");
+        knowledgeFormState.group_name = String((actionRoot.querySelector("#CHAT-KN-GROUP") || {}).value || knowledgeCategoryFilter || "General");
+        knowledgeFormState.template = String((actionRoot.querySelector("#CHAT-KN-TEMPLATE") || {}).value || "");
+        persistKnowledgeFormState();
+      });
+      el.addEventListener("change", function () {
+        knowledgeFormState.keyword = String((actionRoot.querySelector("#CHAT-KN-KEYWORD") || {}).value || "");
+        knowledgeFormState.group_name = String((actionRoot.querySelector("#CHAT-KN-GROUP") || {}).value || knowledgeCategoryFilter || "General");
+        knowledgeFormState.template = String((actionRoot.querySelector("#CHAT-KN-TEMPLATE") || {}).value || "");
+        persistKnowledgeFormState();
+      });
+    });
+
     actionRoot.querySelectorAll("[data-kn-filter]").forEach(function (el) {
       el.addEventListener("click", function () {
         knowledgeCategoryFilter = String(el.getAttribute("data-kn-filter") || "Semua");
         window.localStorage.setItem("ajw_chat_knowledge_filter", knowledgeCategoryFilter);
+        if (!knowledgeFormState.group_name || knowledgeFormState.group_name === "Semua") {
+          knowledgeFormState.group_name = knowledgeCategoryFilter === "Semua" ? "General" : knowledgeCategoryFilter;
+          persistKnowledgeFormState();
+        }
         renderSidePanel();
       });
     });
@@ -1320,6 +1370,10 @@
         })
           .then(function (d) {
             aiSettings = d.row || null;
+            autonomousEnabled = Boolean((actionRoot.querySelector("#CHAT-AI-AUTONOMOUS") || {}).checked);
+            window.localStorage.setItem("ajw_chat_ai_autonomous", autonomousEnabled ? "1" : "0");
+            if (autonomousEnabled) startAutonomous();
+            else stopAutonomous();
             renderHeaderState();
             toast("Mode AI tersimpan.", "success");
           })
@@ -1327,6 +1381,29 @@
             toast("Gagal simpan mode AI: " + (err.message || err), "error");
           });
       };
+    }
+
+    var aiAutoToggle = actionRoot.querySelector("#CHAT-AI-AUTONOMOUS");
+    if (aiAutoToggle) {
+      aiAutoToggle.addEventListener("change", function () {
+        autonomousEnabled = Boolean(aiAutoToggle.checked);
+        window.localStorage.setItem("ajw_chat_ai_autonomous", autonomousEnabled ? "1" : "0");
+        if (autonomousEnabled) startAutonomous();
+        else stopAutonomous();
+      });
+    }
+
+    var aiRunNow = actionRoot.querySelector("#CHAT-AI-RUN-NOW");
+    if (aiRunNow) {
+      aiRunNow.addEventListener("click", function () {
+        runAutonomousCycle()
+          .then(function () {
+            toast("Autonomous cycle selesai.", "success");
+          })
+          .catch(function (err) {
+            toast("Autonomous gagal: " + (err.message || err), "error");
+          });
+      });
     }
   }
 
@@ -1375,6 +1452,40 @@
     emojiOpen = open == null ? !emojiOpen : !!open;
     var picker = document.getElementById("CHAT-EMOJI");
     if (picker) picker.style.display = emojiOpen ? "grid" : "none";
+  }
+
+  function persistQuickFormState() {
+    window.localStorage.setItem("ajw_chat_quick_form", JSON.stringify(quickFormState || {}));
+  }
+
+  function persistKnowledgeFormState() {
+    window.localStorage.setItem("ajw_chat_knowledge_form", JSON.stringify(knowledgeFormState || {}));
+  }
+
+  async function runAutonomousCycle() {
+    if (!autonomousEnabled || !currentShopId || window._activeTab !== "chat") return;
+    try {
+      await apiPost("/api/chat/ai/autonomous/run", {
+        shop_id: currentShopId,
+        limit: 5
+      });
+      refreshConversationsBg();
+      if (selectedConversationId) {
+        await loadMessages();
+        renderMessages();
+      }
+    } catch (_err) {}
+  }
+
+  function startAutonomous() {
+    if (autonomousTimer) clearInterval(autonomousTimer);
+    autonomousTimer = setInterval(runAutonomousCycle, 7000);
+    runAutonomousCycle();
+  }
+
+  function stopAutonomous() {
+    if (autonomousTimer) clearInterval(autonomousTimer);
+    autonomousTimer = null;
   }
 
   function readFileAsDataUrl(file) {
@@ -1483,7 +1594,7 @@
       }
       renderHeaderState();
       renderConversations();
-      if (selectedConversationId) renderMessages();
+      if (selectedConversationId && activeSideTab !== "replies") renderMessages();
       renderFilterState();
     } catch (_err) {
     } finally {
@@ -1787,6 +1898,7 @@
         renderAll();
         scrollThreadToBottom();
         startRealtime();
+        if (autonomousEnabled) startAutonomous();
       })
       .catch(function (err) {
         renderAll();
@@ -1817,6 +1929,7 @@
           return;
         }
         stopRealtime();
+        stopAutonomous();
         toggleEmoji(false);
         applyWideLayout(false);
         return oldNav.apply(this, arguments);
