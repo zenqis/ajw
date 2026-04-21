@@ -1,67 +1,93 @@
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
 
-const dbPath = process.env.DB_PATH || "./data/shopee_chat.db";
+const defaultPath = process.env.VERCEL ? "/tmp/shopee_chat.json" : "./data/shopee_chat.json";
+const dbPath = process.env.DB_PATH || defaultPath;
 const absDbPath = path.resolve(process.cwd(), dbPath);
 fs.mkdirSync(path.dirname(absDbPath), { recursive: true });
 
-export const db = new Database(absDbPath);
+function defaultState() {
+  return {
+    tokens: {},
+    conversations: {},
+    messages: {},
+    webhook_events: []
+  };
+}
 
-db.pragma("journal_mode = WAL");
+let state = defaultState();
+if (fs.existsSync(absDbPath)) {
+  try {
+    const raw = fs.readFileSync(absDbPath, "utf8");
+    const parsed = JSON.parse(raw || "{}");
+    state = {
+      tokens: parsed.tokens || {},
+      conversations: parsed.conversations || {},
+      messages: parsed.messages || {},
+      webhook_events: Array.isArray(parsed.webhook_events) ? parsed.webhook_events : []
+    };
+  } catch {
+    state = defaultState();
+  }
+}
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS shopee_tokens (
-  shop_id TEXT PRIMARY KEY,
-  access_token TEXT NOT NULL,
-  refresh_token TEXT,
-  expire_in INTEGER,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS shopee_conversations (
-  conversation_id TEXT PRIMARY KEY,
-  shop_id TEXT NOT NULL,
-  to_id TEXT,
-  to_name TEXT,
-  to_avatar TEXT,
-  unread_count INTEGER DEFAULT 0,
-  pinned INTEGER DEFAULT 0,
-  latest_message_id TEXT,
-  latest_message_type TEXT,
-  latest_message_text TEXT,
-  last_message_timestamp INTEGER DEFAULT 0,
-  raw_json TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS shopee_messages (
-  message_id TEXT PRIMARY KEY,
-  conversation_id TEXT NOT NULL,
-  shop_id TEXT NOT NULL,
-  message_type TEXT,
-  from_id TEXT,
-  to_id TEXT,
-  created_timestamp INTEGER,
-  content_text TEXT,
-  raw_json TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS shopee_webhook_events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  event_key TEXT,
-  payload TEXT NOT NULL,
-  created_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_msg_conversation_ts
-ON shopee_messages(conversation_id, created_timestamp DESC);
-
-CREATE INDEX IF NOT EXISTS idx_conv_shop_ts
-ON shopee_conversations(shop_id, last_message_timestamp DESC);
-`);
+function persist() {
+  fs.writeFileSync(absDbPath, JSON.stringify(state, null, 2), "utf8");
+}
 
 export function nowIso() {
   return new Date().toISOString();
+}
+
+export function getDbPath() {
+  return absDbPath;
+}
+
+export function upsertToken(row) {
+  state.tokens[String(row.shop_id)] = { ...row };
+  persist();
+}
+
+export function getTokenByShopId(shopId) {
+  return state.tokens[String(shopId)] || null;
+}
+
+export function upsertConversations(rows) {
+  for (const row of rows) {
+    state.conversations[String(row.conversation_id)] = { ...row };
+  }
+  persist();
+}
+
+export function upsertMessages(rows) {
+  for (const row of rows) {
+    state.messages[String(row.message_id)] = { ...row };
+  }
+  persist();
+}
+
+export function insertWebhookEvent(eventKey, payload, createdAt) {
+  state.webhook_events.unshift({
+    id: String(Date.now()) + "_" + Math.random().toString(36).slice(2, 7),
+    event_key: eventKey,
+    payload,
+    created_at: createdAt
+  });
+  state.webhook_events = state.webhook_events.slice(0, 2000);
+  persist();
+}
+
+export function listConversations({ shopId = "", limit = 50, offset = 0 } = {}) {
+  const all = Object.values(state.conversations);
+  const filtered = shopId ? all.filter((r) => String(r.shop_id) === String(shopId)) : all;
+  filtered.sort((a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0));
+  return filtered.slice(offset, offset + limit);
+}
+
+export function listMessages(conversationId, limit = 100) {
+  const rows = Object.values(state.messages).filter(
+    (r) => String(r.conversation_id) === String(conversationId)
+  );
+  rows.sort((a, b) => Number(a.created_timestamp || 0) - Number(b.created_timestamp || 0));
+  return rows.slice(0, limit);
 }

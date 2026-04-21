@@ -5,7 +5,7 @@ Backend ini menangani:
 - OAuth token flow shop
 - Endpoint callback Live Push
 - Sinkron conversation + message chat
-- Simpan data ke database SQLite
+- Simpan data ke file JSON lokal (tanpa dependency native)
 
 ## 1) Setup
 
@@ -71,6 +71,36 @@ Di UI tab Chat:
 - Isi `shop_id`
 - Klik `OAuth` (sekali per shop, atau saat token perlu rebind)
 - Klik `Sync Chat`
+
+## Catatan runtime
+
+- Backend ini sengaja tidak memakai `better-sqlite3`, jadi aman dijalankan di Node 24 tanpa Visual Studio Build Tools.
+- Data tersimpan di path `DB_PATH` (default `./data/shopee_chat.json`).
+
+## Deploy ke Vercel (siap pakai)
+
+Struktur serverless sudah disiapkan:
+- `api/index.js` sebagai entry Vercel Function
+- `src/app.js` sebagai Express app
+- `vercel.json` sudah route semua request ke backend
+
+Langkah:
+1. Push folder `shopee-chat-backend` ke GitHub.
+2. Di Vercel: New Project -> pilih repo -> Root Directory: `shopee-chat-backend`.
+3. Tambahkan Environment Variables di Vercel:
+   - `SHOPEE_PARTNER_ID`
+   - `SHOPEE_PARTNER_KEY`
+   - `SHOPEE_REDIRECT_PATH=/api/shopee/oauth/callback`
+   - `SHOPEE_ENV=live`
+   - `APP_BASE_URL=https://<domain-backend-anda>`
+   - `LIVE_PUSH_PARTNER_KEY` (opsional live push)
+4. Deploy.
+5. Uji endpoint:
+   - `https://<domain-backend-anda>/health`
+
+Penting:
+- Di Vercel, file lokal default tersimpan di `/tmp/shopee_chat.json` (ephemeral). Untuk produksi jangka panjang, pindahkan ke database cloud.
+- Redirect URL domain di Shopee Open Platform wajib sama dengan `APP_BASE_URL` Anda.
 
 ## Catatan
 
