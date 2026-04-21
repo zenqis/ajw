@@ -5,6 +5,16 @@ const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_URL);
 const defaultPath = isVercel ? "/tmp/shopee_chat.json" : "./data/shopee_chat.json";
 const dbPath = process.env.DB_PATH || defaultPath;
 const absDbPath = path.isAbsolute(dbPath) ? dbPath : path.resolve(process.cwd(), dbPath);
+
+const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+const supabaseKey = String(
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_KEY ||
+    ""
+).trim();
+const useSupabase = Boolean(supabaseUrl && supabaseKey);
+
 let persistenceEnabled = true;
 
 try {
@@ -19,7 +29,10 @@ function defaultState() {
     tokens: {},
     conversations: {},
     messages: {},
-    webhook_events: []
+    webhook_events: [],
+    quick_replies: {},
+    orders: {},
+    products: {}
   };
 }
 
@@ -32,7 +45,10 @@ if (persistenceEnabled && fs.existsSync(absDbPath)) {
       tokens: parsed.tokens || {},
       conversations: parsed.conversations || {},
       messages: parsed.messages || {},
-      webhook_events: Array.isArray(parsed.webhook_events) ? parsed.webhook_events : []
+      webhook_events: Array.isArray(parsed.webhook_events) ? parsed.webhook_events : [],
+      quick_replies: parsed.quick_replies || {},
+      orders: parsed.orders || {},
+      products: parsed.products || {}
     };
   } catch {
     state = defaultState();
@@ -40,7 +56,7 @@ if (persistenceEnabled && fs.existsSync(absDbPath)) {
 }
 
 function persist() {
-  if (!persistenceEnabled) return;
+  if (!persistenceEnabled || useSupabase) return;
   try {
     fs.writeFileSync(absDbPath, JSON.stringify(state, null, 2), "utf8");
   } catch (err) {
@@ -49,84 +65,226 @@ function persist() {
   }
 }
 
+function sbHeaders(extra = {}) {
+  return {
+    apikey: supabaseKey,
+    Authorization: `Bearer ${supabaseKey}`,
+    ...extra
+  };
+}
+
+function chunkRows(rows, size = 100) {
+  const out = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}
+
+async function sbRequest(tablePath, { method = "GET", query = {}, headers = {}, body } = {}) {
+  const url = new URL(`${supabaseUrl}/rest/v1/${tablePath}`);
+  Object.entries(query || {}).forEach(([key, value]) => {
+    if (value == null || value === "") return;
+    url.searchParams.set(key, String(value));
+  });
+
+  const res = await fetch(url, {
+    method,
+    headers: sbHeaders({
+      "Content-Type": "application/json",
+      ...headers
+    }),
+    body: body == null ? undefined : JSON.stringify(body)
+  });
+
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const msg =
+      (data && (data.message || data.error_description || data.hint || data.details)) ||
+      text ||
+      `Supabase ${method} ${tablePath} gagal`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function sbUpsert(table, rows, onConflict) {
+  if (!rows || !rows.length) return;
+  for (const batch of chunkRows(rows)) {
+    await sbRequest(table, {
+      method: "POST",
+      query: { on_conflict: onConflict },
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: batch
+    });
+  }
+}
+
+async function sbSelect(table, query = {}) {
+  return sbRequest(table, {
+    method: "GET",
+    query
+  });
+}
+
+async function sbPatch(table, filters, values) {
+  return sbRequest(table, {
+    method: "PATCH",
+    query: filters,
+    headers: { Prefer: "return=minimal" },
+    body: values
+  });
+}
+
+async function sbDelete(table, filters) {
+  return sbRequest(table, {
+    method: "DELETE",
+    query: filters,
+    headers: { Prefer: "return=minimal" }
+  });
+}
+
 export function nowIso() {
   return new Date().toISOString();
 }
 
 export function getDbPath() {
-  return persistenceEnabled ? absDbPath : "memory://volatile";
+  return useSupabase ? `${supabaseUrl}/rest/v1` : persistenceEnabled ? absDbPath : "memory://volatile";
 }
 
-export function upsertToken(row) {
-  state.tokens[String(row.shop_id)] = { ...row };
+export function isSupabaseEnabled() {
+  return useSupabase;
+}
+
+export async function upsertToken(row) {
+  const clean = { ...row, shop_id: String(row.shop_id || "") };
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_tokens", [clean], "shop_id");
+    return;
+  }
+  state.tokens[clean.shop_id] = clean;
   persist();
 }
 
-export function getTokenByShopId(shopId) {
+export async function getTokenByShopId(shopId) {
+  if (useSupabase) {
+    const rows = await sbSelect("shopee_chat_tokens", {
+      select: "*",
+      shop_id: `eq.${String(shopId || "")}`,
+      limit: 1
+    });
+    return rows && rows[0] ? rows[0] : null;
+  }
   return state.tokens[String(shopId)] || null;
 }
 
-export function upsertConversations(rows) {
-  for (const row of rows) {
-    state.conversations[String(row.conversation_id)] = { ...row };
+export async function upsertConversations(rows) {
+  const clean = (rows || []).map((row) => ({
+    ...row,
+    conversation_id: String(row.conversation_id || ""),
+    shop_id: String(row.shop_id || "")
+  }));
+  if (!clean.length) return;
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_conversations", clean, "conversation_id");
+    return;
   }
+  for (const row of clean) state.conversations[row.conversation_id] = row;
   persist();
 }
 
-export function upsertMessages(rows) {
-  for (const row of rows) {
-    state.messages[String(row.message_id)] = { ...row };
+export async function updateConversationStats(conversationId, values) {
+  const id = String(conversationId || "");
+  if (!id) return;
+  if (useSupabase) {
+    await sbPatch("shopee_chat_conversations", { conversation_id: `eq.${id}` }, values);
+    return;
   }
+  state.conversations[id] = { ...(state.conversations[id] || {}), ...values };
   persist();
 }
 
-export function insertWebhookEvent(eventKey, payload, createdAt) {
-  state.webhook_events.unshift({
+export async function getConversationById(conversationId) {
+  const id = String(conversationId || "");
+  if (useSupabase) {
+    const rows = await sbSelect("shopee_chat_conversations", {
+      select: "*",
+      conversation_id: `eq.${id}`,
+      limit: 1
+    });
+    return rows && rows[0] ? rows[0] : null;
+  }
+  return state.conversations[id] || null;
+}
+
+export async function upsertMessages(rows) {
+  const clean = (rows || []).map((row) => ({
+    ...row,
+    message_id: String(row.message_id || ""),
+    conversation_id: String(row.conversation_id || ""),
+    shop_id: String(row.shop_id || "")
+  }));
+  if (!clean.length) return;
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_messages", clean, "message_id");
+    return;
+  }
+  for (const row of clean) state.messages[row.message_id] = row;
+  persist();
+}
+
+export async function insertWebhookEvent(eventKey, payload, createdAt) {
+  const row = {
     id: String(Date.now()) + "_" + Math.random().toString(36).slice(2, 7),
-    event_key: eventKey,
+    event_key: String(eventKey || ""),
     payload,
     created_at: createdAt
-  });
+  };
+  if (useSupabase) {
+    await sbRequest("shopee_chat_webhook_events", {
+      method: "POST",
+      headers: { Prefer: "return=minimal" },
+      body: [row]
+    });
+    return;
+  }
+  state.webhook_events.unshift(row);
   state.webhook_events = state.webhook_events.slice(0, 2000);
   persist();
 }
 
-export function listConversations({ shopId = "", limit = 50, offset = 0 } = {}) {
-  const all = Object.values(state.conversations);
-  const filtered = shopId ? all.filter((r) => String(r.shop_id) === String(shopId)) : all;
-  filtered.sort((a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0));
-  return filtered.slice(offset, offset + limit);
-}
+export async function listConversationsWithStats({ shopId = "", limit = 50, offset = 0 } = {}) {
+  if (useSupabase) {
+    const query = {
+      select: "*",
+      order: "last_message_timestamp.desc",
+      limit,
+      offset
+    };
+    if (shopId) query.shop_id = `eq.${String(shopId)}`;
+    return sbSelect("shopee_chat_conversations", query);
+  }
 
-export function listConversationsWithStats({ shopId = "", limit = 50, offset = 0 } = {}) {
-  const allConversations = Object.values(state.conversations).filter((r) =>
+  const rows = Object.values(state.conversations).filter((r) =>
     shopId ? String(r.shop_id) === String(shopId) : true
   );
-  const allMessages = Object.values(state.messages);
-
-  const rows = allConversations.map((conv) => {
-    let latest = null;
-    for (const m of allMessages) {
-      if (String(m.conversation_id) !== String(conv.conversation_id)) continue;
-      if (!latest || Number(m.created_timestamp || 0) > Number(latest.created_timestamp || 0)) latest = m;
-    }
-    const hasUnreplied = !!(latest && String(latest.from_id || "") !== String(conv.shop_id || ""));
-    return {
-      ...conv,
-      latest_from_id: latest ? String(latest.from_id || "") : "",
-      has_unreplied: hasUnreplied ? 1 : 0
-    };
-  });
-
   rows.sort((a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0));
   return rows.slice(offset, offset + limit);
 }
 
-export function listMessages(conversationId, limit = 100, order = "desc") {
+export async function listMessages(conversationId, limit = 100, order = "desc") {
+  const desc = String(order || "desc").toLowerCase() !== "asc";
+  if (useSupabase) {
+    return sbSelect("shopee_chat_messages", {
+      select: "*",
+      conversation_id: `eq.${String(conversationId || "")}`,
+      order: `created_timestamp.${desc ? "desc" : "asc"}`,
+      limit
+    });
+  }
+
   const rows = Object.values(state.messages).filter(
     (r) => String(r.conversation_id) === String(conversationId)
   );
-  const desc = String(order || "desc").toLowerCase() !== "asc";
   rows.sort((a, b) =>
     desc
       ? Number(b.created_timestamp || 0) - Number(a.created_timestamp || 0)
@@ -135,7 +293,13 @@ export function listMessages(conversationId, limit = 100, order = "desc") {
   return rows.slice(0, limit);
 }
 
-export function listTokens() {
+export async function listTokens() {
+  if (useSupabase) {
+    return sbSelect("shopee_chat_tokens", {
+      select: "shop_id,updated_at,expire_in",
+      order: "updated_at.desc"
+    });
+  }
   return Object.values(state.tokens).map((t) => ({
     shop_id: String(t.shop_id || ""),
     updated_at: t.updated_at || "",
@@ -143,6 +307,125 @@ export function listTokens() {
   }));
 }
 
-export function getConversationById(conversationId) {
-  return state.conversations[String(conversationId)] || null;
+export async function listQuickReplies({ shopId = "", limit = 100 } = {}) {
+  if (useSupabase) {
+    const query = {
+      select: "*",
+      order: "position.asc",
+      limit
+    };
+    if (shopId) query.shop_id = `eq.${String(shopId)}`;
+    return sbSelect("shopee_chat_quick_replies", query);
+  }
+
+  const rows = Object.values(state.quick_replies).filter((r) =>
+    shopId ? String(r.shop_id) === String(shopId) : true
+  );
+  rows.sort((a, b) => Number(a.position || 0) - Number(b.position || 0));
+  return rows.slice(0, limit);
+}
+
+export async function upsertQuickReply(row) {
+  const clean = {
+    id: String(row.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+    shop_id: String(row.shop_id || ""),
+    title: String(row.title || ""),
+    content: String(row.content || ""),
+    group_name: String(row.group_name || "Umum"),
+    position: Number(row.position || 0),
+    updated_at: row.updated_at || nowIso()
+  };
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_quick_replies", [clean], "id");
+    return clean;
+  }
+  state.quick_replies[clean.id] = clean;
+  persist();
+  return clean;
+}
+
+export async function deleteQuickReply(id) {
+  const key = String(id || "");
+  if (useSupabase) {
+    await sbDelete("shopee_chat_quick_replies", { id: `eq.${key}` });
+    return;
+  }
+  delete state.quick_replies[key];
+  persist();
+}
+
+export async function upsertOrders(rows) {
+  const clean = (rows || []).map((row) => ({
+    ...row,
+    id: String(row.id || `${row.shop_id}_${row.order_sn}`),
+    shop_id: String(row.shop_id || ""),
+    conversation_id: String(row.conversation_id || ""),
+    order_sn: String(row.order_sn || "")
+  }));
+  if (!clean.length) return;
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_orders", clean, "id");
+    return;
+  }
+  for (const row of clean) state.orders[row.id] = row;
+  persist();
+}
+
+export async function listOrdersByConversation({ shopId = "", conversationId = "", limit = 20 } = {}) {
+  if (useSupabase) {
+    const query = {
+      select: "*",
+      order: "create_time.desc",
+      limit
+    };
+    if (shopId) query.shop_id = `eq.${String(shopId)}`;
+    if (conversationId) query.conversation_id = `eq.${String(conversationId)}`;
+    return sbSelect("shopee_chat_orders", query);
+  }
+
+  const rows = Object.values(state.orders).filter((r) => {
+    if (shopId && String(r.shop_id) !== String(shopId)) return false;
+    if (conversationId && String(r.conversation_id) !== String(conversationId)) return false;
+    return true;
+  });
+  rows.sort((a, b) => Number(b.create_time || 0) - Number(a.create_time || 0));
+  return rows.slice(0, limit);
+}
+
+export async function upsertProducts(rows) {
+  const clean = (rows || []).map((row) => ({
+    ...row,
+    id: String(row.id || `${row.shop_id}_${row.item_id}`),
+    shop_id: String(row.shop_id || ""),
+    item_id: String(row.item_id || "")
+  }));
+  if (!clean.length) return;
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_products", clean, "id");
+    return;
+  }
+  for (const row of clean) state.products[row.id] = row;
+  persist();
+}
+
+export async function listProductsByShop({ shopId = "", search = "", limit = 80 } = {}) {
+  if (useSupabase) {
+    const query = {
+      select: "*",
+      order: "updated_at.desc",
+      limit
+    };
+    if (shopId) query.shop_id = `eq.${String(shopId)}`;
+    if (search) query.item_name = `ilike.*${String(search).replace(/\*/g, "")}*`;
+    return sbSelect("shopee_chat_products", query);
+  }
+
+  const term = String(search || "").toLowerCase();
+  const rows = Object.values(state.products).filter((r) => {
+    if (shopId && String(r.shop_id) !== String(shopId)) return false;
+    if (!term) return true;
+    return String(r.item_name || "").toLowerCase().includes(term) || String(r.sku || "").toLowerCase().includes(term);
+  });
+  rows.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  return rows.slice(0, limit);
 }
