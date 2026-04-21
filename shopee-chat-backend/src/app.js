@@ -10,13 +10,16 @@ import {
   upsertConversations,
   upsertMessages,
   insertWebhookEvent,
-  listConversations,
-  listMessages
+  listConversationsWithStats,
+  listMessages,
+  listTokens,
+  getConversationById
 } from "./db.js";
 import {
   buildAuthUrl,
   buildSignedQuery,
   callShopee,
+  callShopeeAuth,
   getBaseUrl,
   verifyLivePushSignature
 } from "./shopee.js";
@@ -154,6 +157,79 @@ async function syncConversations(shopId) {
   return rows.length;
 }
 
+function latestIncomingText(conversationId, shopId) {
+  const latest = listMessages(conversationId, 30, "desc").find(
+    (m) => String(m.from_id || "") !== String(shopId || "")
+  );
+  return String((latest && latest.content_text) || "").trim();
+}
+
+function smartReplyFromText(text, templates = []) {
+  const raw = String(text || "").toLowerCase();
+  if (!raw) return templates[0] || "Halo kak, terima kasih sudah menghubungi kami. Ada yang bisa kami bantu?";
+  if (raw.includes("stok")) {
+    return (
+      templates.find((t) => /stok/i.test(t)) ||
+      "Untuk stok saat ini tersedia kak. Silakan infokan varian yang dibutuhkan ya."
+    );
+  }
+  if (raw.includes("kirim") || raw.includes("resi")) {
+    return (
+      templates.find((t) => /kirim|resi/i.test(t)) ||
+      "Pesanan akan diproses sesuai antrean dan nomor resi otomatis muncul setelah paket dikirim ya kak."
+    );
+  }
+  if (raw.includes("harga") || raw.includes("diskon")) {
+    return (
+      templates.find((t) => /harga|diskon|promo/i.test(t)) ||
+      "Harga dan promo mengikuti yang tampil di etalase. Jika ada promo aktif, otomatis terpotong saat checkout."
+    );
+  }
+  return (
+    templates[0] ||
+    "Baik kak, terima kasih infonya. Kami bantu cek dulu, mohon tunggu sebentar ya."
+  );
+}
+
+async function sendShopeeMessage({ shopId, conversationId, text }) {
+  const accessToken = await ensureAccessToken(shopId);
+  const path = "/api/v2/sellerchat/send_message";
+  const conv = getConversationById(conversationId);
+  const toId = conv ? String(conv.to_id || "") : "";
+
+  const candidates = [
+    {
+      request_id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      to_id: Number(toId || 0),
+      message_type: "text",
+      content: { text: String(text || "") }
+    },
+    {
+      request_id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      conversation_id: String(conversationId),
+      message_type: "text",
+      content: { text: String(text || "") }
+    }
+  ];
+
+  let lastErr = null;
+  for (const payload of candidates) {
+    try {
+      const data = await callShopeeAuth(path, "POST", {
+        shopId,
+        accessToken,
+        body: payload
+      });
+      if (data && data.error) throw new Error(`${data.error}: ${data.message || "send_message gagal"}`);
+      await syncConversationMessages(shopId, conversationId);
+      return data;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error("Gagal kirim pesan");
+}
+
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
@@ -266,7 +342,11 @@ app.get("/api/chat/conversations", (req, res) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
   const offset = Math.max(0, Number(req.query.offset || 0));
   const shopId = String(req.query.shop_id || "");
-  const rows = listConversations({ shopId, limit, offset });
+  const filter = String(req.query.filter || "all").toLowerCase();
+  let rows = listConversationsWithStats({ shopId, limit: 300, offset: 0 });
+  if (filter === "unreplied") rows = rows.filter((r) => Number(r.has_unreplied || 0) > 0);
+  if (filter === "unread") rows = rows.filter((r) => Number(r.unread_count || 0) > 0);
+  rows = rows.slice(offset, offset + limit);
   res.json({ ok: true, rows });
 });
 
@@ -274,8 +354,75 @@ app.get("/api/chat/messages", (req, res) => {
   const conversationId = String(req.query.conversation_id || "");
   if (!conversationId) return res.status(400).json({ ok: false, error: "conversation_id wajib" });
   const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
-  const rows = listMessages(conversationId, limit);
+  const order = String(req.query.order || "desc");
+  const rows = listMessages(conversationId, limit, order);
   res.json({ ok: true, rows });
+});
+
+app.get("/api/chat/shops", (_req, res) => {
+  const rows = listTokens()
+    .map((r) => ({
+      shop_id: String(r.shop_id || ""),
+      expire_in: Number(r.expire_in || 0),
+      updated_at: r.updated_at || "",
+      label: `Shop ${String(r.shop_id || "-")}`
+    }))
+    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  res.json({ ok: true, rows });
+});
+
+app.post("/api/chat/send", express.json(), async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const conversationId = String(req.body.conversation_id || "").trim();
+    const text = String(req.body.text || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    if (!conversationId) throw new Error("conversation_id wajib");
+    if (!text) throw new Error("text wajib");
+    if (text.length > 1900) throw new Error("text terlalu panjang");
+    await sendShopeeMessage({ shopId, conversationId, text });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/auto-reply", express.json(), async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const dryRun = Boolean(req.body.dry_run);
+    const limit = Math.min(50, Math.max(1, Number(req.body.limit || 15)));
+    const templates = Array.isArray(req.body.templates) ? req.body.templates.map((x) => String(x || "").trim()).filter(Boolean) : [];
+    if (!shopId) throw new Error("shop_id wajib");
+
+    const convs = listConversationsWithStats({ shopId, limit: 300, offset: 0 }).filter(
+      (r) => Number(r.has_unreplied || 0) > 0
+    );
+    const targets = convs.slice(0, limit);
+    const results = [];
+
+    for (const c of targets) {
+      const incoming = latestIncomingText(c.conversation_id, shopId);
+      const reply = smartReplyFromText(incoming, templates);
+      if (!reply) continue;
+      if (!dryRun) {
+        await sendShopeeMessage({
+          shopId,
+          conversationId: c.conversation_id,
+          text: reply
+        });
+      }
+      results.push({
+        conversation_id: c.conversation_id,
+        to_name: c.to_name || "",
+        incoming,
+        reply
+      });
+    }
+    res.json({ ok: true, dry_run: dryRun, count: results.length, rows: results });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
 });
 
 export default app;

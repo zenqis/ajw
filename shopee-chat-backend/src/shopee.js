@@ -63,6 +63,18 @@ export async function callShopee(path, method = "GET", { query = {}, body } = {}
   return res.data;
 }
 
+export async function callShopeeAuth(
+  path,
+  method = "GET",
+  { shopId, accessToken, query = {}, body } = {}
+) {
+  const ts = Math.floor(Date.now() / 1000);
+  const signed = buildSignedQuery(path, ts, { shopId, accessToken });
+  const signedQuery = Object.fromEntries(new URLSearchParams(signed));
+  const finalQuery = { ...signedQuery, ...query };
+  return callShopee(path, method, { query: finalQuery, body });
+}
+
 export function verifyLivePushSignature(rawBody, headers = {}) {
   const key = String(process.env.LIVE_PUSH_PARTNER_KEY || "");
   if (!key) return true;

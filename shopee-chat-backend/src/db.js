@@ -98,10 +98,51 @@ export function listConversations({ shopId = "", limit = 50, offset = 0 } = {}) 
   return filtered.slice(offset, offset + limit);
 }
 
-export function listMessages(conversationId, limit = 100) {
+export function listConversationsWithStats({ shopId = "", limit = 50, offset = 0 } = {}) {
+  const allConversations = Object.values(state.conversations).filter((r) =>
+    shopId ? String(r.shop_id) === String(shopId) : true
+  );
+  const allMessages = Object.values(state.messages);
+
+  const rows = allConversations.map((conv) => {
+    let latest = null;
+    for (const m of allMessages) {
+      if (String(m.conversation_id) !== String(conv.conversation_id)) continue;
+      if (!latest || Number(m.created_timestamp || 0) > Number(latest.created_timestamp || 0)) latest = m;
+    }
+    const hasUnreplied = !!(latest && String(latest.from_id || "") !== String(conv.shop_id || ""));
+    return {
+      ...conv,
+      latest_from_id: latest ? String(latest.from_id || "") : "",
+      has_unreplied: hasUnreplied ? 1 : 0
+    };
+  });
+
+  rows.sort((a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0));
+  return rows.slice(offset, offset + limit);
+}
+
+export function listMessages(conversationId, limit = 100, order = "desc") {
   const rows = Object.values(state.messages).filter(
     (r) => String(r.conversation_id) === String(conversationId)
   );
-  rows.sort((a, b) => Number(a.created_timestamp || 0) - Number(b.created_timestamp || 0));
+  const desc = String(order || "desc").toLowerCase() !== "asc";
+  rows.sort((a, b) =>
+    desc
+      ? Number(b.created_timestamp || 0) - Number(a.created_timestamp || 0)
+      : Number(a.created_timestamp || 0) - Number(b.created_timestamp || 0)
+  );
   return rows.slice(0, limit);
+}
+
+export function listTokens() {
+  return Object.values(state.tokens).map((t) => ({
+    shop_id: String(t.shop_id || ""),
+    updated_at: t.updated_at || "",
+    expire_in: Number(t.expire_in || 0)
+  }));
+}
+
+export function getConversationById(conversationId) {
+  return state.conversations[String(conversationId)] || null;
 }
