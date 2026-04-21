@@ -279,6 +279,16 @@
     }
   }
 
+  function refreshConversationsBg() {
+    loadConversations()
+      .then(function () {
+        renderConversations();
+        renderShops();
+        renderHeaderState();
+      })
+      .catch(function () {});
+  }
+
   async function loadMessages() {
     if (!selectedConversationId) {
       messagesCache = [];
@@ -913,32 +923,87 @@
     var grouped = quickRepliesCache.filter(function (row) {
       return normalizeReplyGroup(row.group_name) === replyGroupFilter;
     });
-    var predictions = buildPredictions();
     var menuButtons =
-      '<div class="ajw-reply-side">' +
-      '<button class="' + (repliesManageMenu === "quick" ? "on" : "") + '" data-replies-menu="quick">Balasan Cepat</button>' +
-      '<button class="' + (repliesManageMenu === "knowledge" ? "on" : "") + '" data-replies-menu="knowledge">Pusat Informasi</button>' +
-      '<button class="' + (repliesManageMenu === "ai" ? "on" : "") + '" data-replies-menu="ai">Mode AI</button>' +
+      '<div class="ajw-reply-top" style="margin-bottom:8px">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<button class="ajw-chip ' + (repliesManageMenu === "quick" ? "on" : "") + '" data-replies-menu="quick">Balasan Cepat</button>' +
+      '<button class="ajw-chip ' + (repliesManageMenu === "managequick" ? "on" : "") + '" data-replies-menu="managequick">Tambah Balasan</button>' +
+      '<button class="ajw-chip ' + (repliesManageMenu === "knowledge" ? "on" : "") + '" data-replies-menu="knowledge">Pusat Informasi</button>' +
+      '<button class="ajw-chip ' + (repliesManageMenu === "ai" ? "on" : "") + '" data-replies-menu="ai">Mode AI</button>' +
+      "</div>" +
       "</div>";
 
-    var mainQuick =
-      '<div class="ajw-reply-main">' +
+    if (repliesManageMenu === "managequick") {
+      return (
+        menuButtons +
+        '<div class="ajw-chat-card">' +
+        '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Balasan Cepat</div>' +
+        '<input id="CHAT-QR-KEYWORD" class="fi" placeholder="Keyword pemicu (opsional)">' +
+        '<input id="CHAT-QR-TITLE" class="fi" placeholder="Judul template" style="margin-top:8px">' +
+        '<textarea id="CHAT-QR-CONTENT" class="fi" style="margin-top:8px;min-height:100px" placeholder="Template jawaban..."></textarea>' +
+        '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-QR-ADD-FORM" class="btnp">Simpan Template</button></div>' +
+        "</div>"
+      );
+    }
+
+    if (repliesManageMenu === "knowledge") {
+      return (
+        menuButtons +
+        '<div class="ajw-chat-card">' +
+        '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Referensi Kata Kunci</div>' +
+        '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan">' +
+        '<input id="CHAT-KN-GROUP" class="fi" placeholder="Kategori (contoh: Pengiriman)" style="margin-top:8px">' +
+        '<textarea id="CHAT-KN-TEMPLATE" class="fi" style="margin-top:8px;min-height:100px" placeholder="Jawaban acuan untuk AI..."></textarea>' +
+        '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-KN-ADD" class="btnp">Simpan Referensi</button></div>' +
+        "</div>" +
+        (knowledgeCache.length
+          ? knowledgeCache
+              .slice(0, 60)
+              .map(function (k) {
+                return (
+                  '<div class="ajw-chat-card">' +
+                  '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">' +
+                  '<div style="font-size:11px;font-weight:800;color:var(--tx)">' + escSafe(k.keyword || "-") + "</div>" +
+                  '<button class="btns" data-kn-del="' + escSafe(k.id) + '" style="padding:5px 8px;font-size:10px">Hapus</button>' +
+                  "</div>" +
+                  '<div style="font-size:10px;color:var(--tx3);margin-top:4px">' + escSafe(k.group_name || "General") + "</div>" +
+                  '<div style="font-size:12px;color:var(--tx2);margin-top:6px;white-space:pre-wrap">' + escSafe(k.template || "") + "</div>" +
+                  "</div>"
+                );
+              })
+              .join("")
+          : '<div class="ajw-chat-empty">Belum ada data pusat informasi.</div>')
+      );
+    }
+
+    if (repliesManageMenu === "ai") {
+      return (
+        menuButtons +
+        '<div class="ajw-chat-card">' +
+        '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Mode AI Balas Otomatis</div>' +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
+        '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-ENABLED" ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "checked" : "") + "> AI Aktif</label>" +
+        '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-APPROVAL" ' + (!aiSettings || Number(aiSettings.require_approval || 0) ? "checked" : "") + "> Perlu Persetujuan Kirim</label>" +
+        '<select id="CHAT-AI-PROVIDER" class="fi" style="max-width:150px">' +
+        '<option value="smart"' + (aiSettings && aiSettings.provider === "smart" ? " selected" : "") + ">Smart</option>" +
+        '<option value="openai"' + (aiSettings && aiSettings.provider === "openai" ? " selected" : "") + ">OpenAI</option>" +
+        '<option value="claude"' + (aiSettings && aiSettings.provider === "claude" ? " selected" : "") + ">Claude</option>" +
+        "</select>" +
+        '<button id="CHAT-AI-SAVE-SETTINGS" class="btns">Simpan Mode AI</button>' +
+        "</div>" +
+        '<div style="font-size:11px;color:var(--tx3);margin-top:8px">Draft AI direview dulu, lalu kirim manual supaya aman.</div>' +
+        "</div>"
+      );
+    }
+
+    return (
+      menuButtons +
       '<div class="ajw-reply-top">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       '<button class="ajw-chip ' + (replyGroupFilter === "Umum" ? "on" : "") + '" data-reply-group="Umum">Umum</button>' +
       '<button class="ajw-chip ' + (replyGroupFilter === "Pribadi" ? "on" : "") + '" data-reply-group="Pribadi">Pribadi</button>' +
       "</div>" +
-      '<button id="CHAT-QR-ADD" class="btnp" style="padding:8px 12px">Tambah</button>' +
       "</div>" +
-      (predictions.length
-        ? ('<div class="ajw-predict"><h4>Teks Prediksi</h4><div style="display:flex;gap:6px;flex-wrap:wrap">' +
-          predictions
-            .map(function (txt, idx) {
-              return '<button class="ajw-chip" data-predict-idx="' + idx + '">' + escSafe(txt.slice(0, 52)) + (txt.length > 52 ? "..." : "") + "</button>";
-            })
-            .join("") +
-          "</div></div>")
-        : "") +
       (grouped.length
         ? grouped
             .map(function (row) {
@@ -955,67 +1020,7 @@
               );
             })
             .join("")
-        : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk grup ini.</div>') +
-      "</div>";
-
-    var mainKnowledge =
-      '<div class="ajw-reply-main">' +
-      '<div class="ajw-chat-card">' +
-      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Referensi Kata Kunci</div>' +
-      '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan">' +
-      '<input id="CHAT-KN-GROUP" class="fi" placeholder="Kategori (contoh: Pengiriman)" style="margin-top:8px">' +
-      '<textarea id="CHAT-KN-TEMPLATE" class="fi" style="margin-top:8px;min-height:100px" placeholder="Jawaban acuan untuk AI..."></textarea>' +
-      '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-KN-ADD" class="btnp">Simpan Referensi</button></div>' +
-      "</div>" +
-      (knowledgeCache.length
-        ? ('<div class="ajw-predict"><h4>Daftar Pusat Informasi</h4>' +
-          knowledgeCache
-            .slice(0, 60)
-            .map(function (k) {
-              return (
-                '<div class="ajw-chat-card" style="margin-bottom:8px">' +
-                '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">' +
-                '<div style="font-size:11px;font-weight:800;color:var(--tx)">' + escSafe(k.keyword || "-") + "</div>" +
-                '<button class="btns" data-kn-del="' + escSafe(k.id) + '" style="padding:5px 8px;font-size:10px">Hapus</button>' +
-                "</div>" +
-                '<div style="font-size:10px;color:var(--tx3);margin-top:4px">' + escSafe(k.group_name || "General") + "</div>" +
-                '<div style="font-size:12px;color:var(--tx2);margin-top:6px;white-space:pre-wrap">' + escSafe(k.template || "") + "</div>" +
-                "</div>"
-              );
-            })
-            .join("") +
-          "</div>")
-        : '<div class="ajw-chat-empty">Belum ada data pusat informasi.</div>') +
-      "</div>";
-
-    var mainAi =
-      '<div class="ajw-reply-main">' +
-      '<div class="ajw-chat-card">' +
-      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Mode AI Balas Otomatis</div>' +
-      '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
-      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-ENABLED" ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "checked" : "") + "> AI Aktif</label>" +
-      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-APPROVAL" ' + (!aiSettings || Number(aiSettings.require_approval || 0) ? "checked" : "") + "> Perlu Persetujuan Kirim</label>" +
-      '<select id="CHAT-AI-PROVIDER" class="fi" style="max-width:150px">' +
-      '<option value="smart"' + (aiSettings && aiSettings.provider === "smart" ? " selected" : "") + ">Smart</option>" +
-      '<option value="openai"' + (aiSettings && aiSettings.provider === "openai" ? " selected" : "") + ">OpenAI</option>" +
-      '<option value="claude"' + (aiSettings && aiSettings.provider === "claude" ? " selected" : "") + ">Claude</option>" +
-      "</select>" +
-      '<button id="CHAT-AI-SAVE-SETTINGS" class="btns">Simpan Mode AI</button>' +
-      "</div>" +
-      '<div style="font-size:11px;color:var(--tx3);margin-top:8px">Draft AI bisa direview dulu di bawah kolom kirim chat sebelum dikirim ke pembeli.</div>' +
-      "</div>" +
-      '<div class="ajw-chat-card">' +
-      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Balasan Cepat + Keyword Sekaligus</div>' +
-      '<input id="CHAT-QR-KEYWORD" class="fi" placeholder="Keyword pemicu (stok, kirim, refund)">' +
-      '<input id="CHAT-QR-TITLE" class="fi" placeholder="Judul template" style="margin-top:8px">' +
-      '<textarea id="CHAT-QR-CONTENT" class="fi" style="margin-top:8px;min-height:100px" placeholder="Template jawaban..."></textarea>' +
-      '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-QR-ADD-FORM" class="btnp">Simpan Template</button></div>' +
-      "</div>" +
-      "</div>";
-
-    var main = repliesManageMenu === "knowledge" ? mainKnowledge : repliesManageMenu === "ai" ? mainAi : mainQuick;
-    return (
-      '<div class="ajw-reply-layout">' + menuButtons + main + "</div>"
+        : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk grup ini.</div>')
     );
   }
 
@@ -1397,11 +1402,11 @@
       if (changed) {
         lastRealtimeConvSig = convSig;
         lastRealtimeMsgSig = msgSig;
-        renderHeaderState();
-        renderConversations();
-        renderMessages();
-        renderFilterState();
       }
+      renderHeaderState();
+      renderConversations();
+      if (selectedConversationId) renderMessages();
+      renderFilterState();
     } catch (_err) {
     } finally {
       pollInFlight = false;
@@ -1411,7 +1416,7 @@
   function startRealtime() {
     stopRealtime();
     runRealtimePoll();
-    realtimeTimer = setInterval(runRealtimePoll, 4000);
+    realtimeTimer = setInterval(runRealtimePoll, 2500);
   }
 
   function stopRealtime() {
@@ -1569,7 +1574,9 @@
       el.addEventListener("click", function () {
         activeFilter = String(el.getAttribute("data-chat-filter") || "all");
         window.localStorage.setItem("ajw_chat_filter", activeFilter);
-        loadConversations().then(renderAll);
+        renderFilterState();
+        renderConversations();
+        refreshConversationsBg();
       });
     });
 
