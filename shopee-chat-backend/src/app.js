@@ -342,46 +342,90 @@ async function syncOrdersByRefs(shopId, conversationId, orderRefs) {
 async function syncShopProducts(shopId) {
   const accessToken = await ensureAccessToken(shopId);
   const listPath = "/api/v2/product/get_item_list";
-  const listData = await callShopeeAuth(listPath, "GET", {
-    shopId,
-    accessToken,
-    query: {
-      offset: "0",
-      page_size: "40",
-      item_status: "NORMAL"
-    }
-  });
+  const listRows = [];
+  const listByItemId = {};
+  let offset = 0;
+  let page = 0;
+  const maxPages = 10;
 
-  if (listData && listData.error) throw new Error(`${listData.error}: ${listData.message || "get_item_list gagal"}`);
-  const itemIds = ((listData && listData.response && listData.response.item) || [])
-    .map((r) => String(r.item_id || ""))
-    .filter(Boolean);
+  while (page < maxPages) {
+    const listData = await callShopeeAuth(listPath, "GET", {
+      shopId,
+      accessToken,
+      query: {
+        offset: String(offset),
+        page_size: "100",
+        item_status: "NORMAL"
+      }
+    });
+
+    if (listData && listData.error) throw new Error(`${listData.error}: ${listData.message || "get_item_list gagal"}`);
+    const chunk = ((listData && listData.response && listData.response.item) || []).filter(Boolean);
+    if (!chunk.length) break;
+    for (const row of chunk) {
+      const id = String(row.item_id || "");
+      if (!id) continue;
+      listByItemId[id] = row;
+      listRows.push(row);
+    }
+
+    const hasNext =
+      Boolean(listData && listData.response && listData.response.has_next_page) &&
+      Number(listData && listData.response && listData.response.next_offset) > offset;
+    if (!hasNext) break;
+    offset = Number(listData.response.next_offset || 0);
+    page += 1;
+  }
+
+  const itemIds = listRows.map((r) => String(r.item_id || "")).filter(Boolean);
 
   if (!itemIds.length) return [];
 
   const infoPath = "/api/v2/product/get_item_base_info";
-  const infoData = await callShopeeAuth(infoPath, "GET", {
-    shopId,
-    accessToken,
-    query: {
-      item_id_list: itemIds.join(",")
-    }
-  });
+  const infoRows = [];
+  for (let i = 0; i < itemIds.length; i += 50) {
+    const batch = itemIds.slice(i, i + 50);
+    const infoData = await callShopeeAuth(infoPath, "GET", {
+      shopId,
+      accessToken,
+      query: {
+        item_id_list: batch.join(",")
+      }
+    });
+    if (infoData && infoData.error) throw new Error(`${infoData.error}: ${infoData.message || "get_item_base_info gagal"}`);
+    const chunk = ((infoData && infoData.response && infoData.response.item_list) || []).filter(Boolean);
+    infoRows.push(...chunk);
+  }
 
-  if (infoData && infoData.error) throw new Error(`${infoData.error}: ${infoData.message || "get_item_base_info gagal"}`);
-  const items = ((infoData && infoData.response && infoData.response.item_list) || []).map((item) => ({
-    id: `${shopId}_${String(item.item_id || "")}`,
-    shop_id: String(shopId),
-    item_id: String(item.item_id || ""),
-    item_name: String(item.item_name || ""),
-    sku: String(item.item_sku || ""),
-    price_info: JSON.stringify(item.price_info || []),
-    stock: Number(item.stock_info_v2 && item.stock_info_v2.summary_info ? item.stock_info_v2.summary_info.total_available_stock || 0 : 0),
-    image_url: item.image && item.image.image_url_list && item.image.image_url_list[0] ? item.image.image_url_list[0] : "",
-    status: String(item.item_status || ""),
-    raw_json: JSON.stringify(item || {}),
-    updated_at: nowIso()
-  }));
+  const items = infoRows.map((item) => {
+    const itemId = String(item.item_id || "");
+    const listRef = listByItemId[itemId] || {};
+    const stockFromInfo =
+      item.stock_info_v2 && item.stock_info_v2.summary_info
+        ? Number(item.stock_info_v2.summary_info.total_available_stock || 0)
+        : 0;
+    const stock =
+      stockFromInfo > 0
+        ? stockFromInfo
+        : Number(listRef.current_stock || listRef.normal_stock || listRef.stock || 0);
+
+    return {
+      id: `${shopId}_${itemId}`,
+      shop_id: String(shopId),
+      item_id: itemId,
+      item_name: String(item.item_name || listRef.item_name || ""),
+      sku: String(item.item_sku || listRef.item_sku || ""),
+      price_info: JSON.stringify(item.price_info || listRef.price_info || []),
+      stock,
+      image_url:
+        item.image && item.image.image_url_list && item.image.image_url_list[0]
+          ? item.image.image_url_list[0]
+          : String(listRef.image && listRef.image.image_url ? listRef.image.image_url : ""),
+      status: String(item.item_status || listRef.item_status || ""),
+      raw_json: JSON.stringify({ base_info: item || {}, list_info: listRef || {} }),
+      updated_at: nowIso()
+    };
+  });
 
   await upsertProducts(items);
   return items;
@@ -771,6 +815,7 @@ app.get("/api/chat/products", async (req, res) => {
   try {
     const shopId = String(req.query.shop_id || "").trim();
     const search = String(req.query.search || "").trim();
+    const limit = Math.min(300, Math.max(20, Number(req.query.limit || 180)));
     if (!shopId) throw new Error("shop_id wajib");
     const refresh = String(req.query.refresh || "") === "1";
     if (refresh) {
@@ -780,7 +825,7 @@ app.get("/api/chat/products", async (req, res) => {
         console.error("product refresh warning:", err.message || err);
       }
     }
-    const rows = await listProductsByShop({ shopId, search, limit: 80 });
+    const rows = await listProductsByShop({ shopId, search, limit });
     res.json({ ok: true, rows });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });

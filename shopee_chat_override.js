@@ -261,6 +261,7 @@
     var data = await apiGet(
       "/api/chat/products?shop_id=" +
         encodeURIComponent(currentShopId) +
+        "&limit=220" +
         (productSearch ? "&search=" + encodeURIComponent(productSearch) : "") +
         (refresh ? "&refresh=1" : "")
     );
@@ -474,9 +475,48 @@
   function parseProductPrice(row) {
     try {
       var priceInfo = JSON.parse(row.price_info || "[]");
-      if (Array.isArray(priceInfo) && priceInfo[0] && priceInfo[0].current_price != null) return money(priceInfo[0].current_price);
+      if (Array.isArray(priceInfo) && priceInfo.length) {
+        var nums = priceInfo
+          .map(function (p) {
+            return Number(p.current_price != null ? p.current_price : p.original_price);
+          })
+          .filter(function (n) {
+            return Number.isFinite(n) && n > 0;
+          });
+        if (nums.length) {
+          var min = Math.min.apply(Math, nums);
+          var max = Math.max.apply(Math, nums);
+          return min === max ? money(min) : money(min) + " ~ " + money(max);
+        }
+      }
+    } catch (_e) {}
+    try {
+      var raw = JSON.parse(row.raw_json || "{}");
+      var list = raw.list_info || {};
+      var minP = Number(list.price_min || list.price || 0);
+      var maxP = Number(list.price_max || minP || 0);
+      if (minP > 0) return minP === maxP ? money(minP) : money(minP) + " ~ " + money(maxP);
     } catch (_e) {}
     return "-";
+  }
+
+  function parseProductSold(row) {
+    try {
+      var raw = JSON.parse(row.raw_json || "{}");
+      var list = raw.list_info || {};
+      var n = Number(
+        list.historical_sold != null
+          ? list.historical_sold
+          : list.sold != null
+          ? list.sold
+          : list.sales != null
+          ? list.sales
+          : 0
+      );
+      return Number.isFinite(n) ? n : 0;
+    } catch (_e) {
+      return 0;
+    }
   }
 
   function renderProductsTab() {
@@ -495,7 +535,7 @@
                 '<div style="min-width:0">' +
                 '<div style="font-size:12px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escSafe(row.item_name || "-") + "</div>" +
                 '<div style="font-size:11px;color:var(--tx2);margin-top:4px">SKU: ' + escSafe(row.sku || "-") + "</div>" +
-                '<div style="font-size:11px;color:var(--tx2);margin-top:4px">Harga: ' + escSafe(parseProductPrice(row)) + " • Stok: " + escSafe(row.stock || 0) + "</div>" +
+                '<div style="font-size:11px;color:var(--tx2);margin-top:4px">Harga: ' + escSafe(parseProductPrice(row)) + " • Stok: " + escSafe(row.stock || 0) + " • Terjual: x" + escSafe(parseProductSold(row)) + "</div>" +
                 "</div>" +
                 '<button class="btnp" data-send-product="' + escSafe(row.item_id || "") + '" style="padding:8px 12px">Kirim</button>' +
                 "</div></div>"
