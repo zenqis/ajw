@@ -21,6 +21,7 @@
   var aiDraftsCache = [];
   var aiSettings = null;
   var repliesManageMenu = window.localStorage.getItem("ajw_chat_replies_menu") || "quick";
+  var knowledgeCategoryFilter = window.localStorage.getItem("ajw_chat_knowledge_filter") || "Semua";
   var replyGroupFilter = window.localStorage.getItem("ajw_chat_reply_group") || "Umum";
   var predictionEnabled = window.localStorage.getItem("ajw_chat_pred_toggle") !== "0";
   var referenceEnabled = window.localStorage.getItem("ajw_chat_ref_toggle") !== "0";
@@ -919,6 +920,36 @@
     return scored.slice(0, 5).map(function (x) { return x.txt; });
   }
 
+  function knowledgeCategoryOptions() {
+    var defaults = [
+      "Logistik/Pengiriman",
+      "Obrolan ringan",
+      "Paska Penjualan",
+      "Produk",
+      "Pra-Penjualan",
+      "Live Agent",
+      "General"
+    ];
+    var set = {};
+    defaults.forEach(function (x) {
+      set[String(x)] = true;
+    });
+    (knowledgeCache || []).forEach(function (k) {
+      var g = String(k.group_name || "General").trim();
+      if (g) set[g] = true;
+    });
+    return Object.keys(set);
+  }
+
+  function knowledgeCategoryCounts() {
+    var map = { Semua: Number((knowledgeCache || []).length || 0) };
+    (knowledgeCache || []).forEach(function (k) {
+      var g = String(k.group_name || "General").trim() || "General";
+      map[g] = (map[g] || 0) + 1;
+    });
+    return map;
+  }
+
   function renderRepliesTab() {
     var grouped = quickRepliesCache.filter(function (row) {
       return normalizeReplyGroup(row.group_name) === replyGroupFilter;
@@ -947,17 +978,43 @@
     }
 
     if (repliesManageMenu === "knowledge") {
+      var catOptions = knowledgeCategoryOptions();
+      var catCounts = knowledgeCategoryCounts();
+      var activeCat = knowledgeCategoryFilter || "Semua";
+      var filteredKnowledge = activeCat === "Semua"
+        ? (knowledgeCache || [])
+        : (knowledgeCache || []).filter(function (k) {
+            return String(k.group_name || "General") === activeCat;
+          });
       return (
         menuButtons +
+        '<div class="ajw-reply-layout">' +
+        '<div class="ajw-reply-side">' +
+        '<button class="' + (activeCat === "Semua" ? "on" : "") + '" data-kn-filter="Semua">Semua ' + escSafe(catCounts.Semua || 0) + "</button>" +
+        catOptions
+          .filter(function (x) { return x !== "Semua"; })
+          .map(function (cat) {
+            return '<button class="' + (activeCat === cat ? "on" : "") + '" data-kn-filter="' + escSafe(cat) + '">' + escSafe(cat) + " " + escSafe(catCounts[cat] || 0) + "</button>";
+          })
+          .join("") +
+        "</div>" +
+        '<div class="ajw-reply-main">' +
         '<div class="ajw-chat-card">' +
         '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Referensi Kata Kunci</div>' +
         '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan">' +
-        '<input id="CHAT-KN-GROUP" class="fi" placeholder="Kategori (contoh: Pengiriman)" style="margin-top:8px">' +
+        '<select id="CHAT-KN-GROUP" class="fi" style="margin-top:8px">' +
+        catOptions
+          .map(function (cat) {
+            var selected = cat === activeCat ? " selected" : "";
+            return '<option value="' + escSafe(cat) + '"' + selected + ">" + escSafe(cat) + "</option>";
+          })
+          .join("") +
+        "</select>" +
         '<textarea id="CHAT-KN-TEMPLATE" class="fi" style="margin-top:8px;min-height:100px" placeholder="Jawaban acuan untuk AI..."></textarea>' +
         '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-KN-ADD" class="btnp">Simpan Referensi</button></div>' +
         "</div>" +
-        (knowledgeCache.length
-          ? knowledgeCache
+        (filteredKnowledge.length
+          ? filteredKnowledge
               .slice(0, 60)
               .map(function (k) {
                 return (
@@ -973,6 +1030,7 @@
               })
               .join("")
           : '<div class="ajw-chat-empty">Belum ada data pusat informasi.</div>')
+        + "</div></div>"
       );
     }
 
@@ -1169,6 +1227,14 @@
         toast("Pusat informasi tersimpan.", "success");
       };
     }
+
+    host.querySelectorAll("[data-kn-filter]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        knowledgeCategoryFilter = String(el.getAttribute("data-kn-filter") || "Semua");
+        window.localStorage.setItem("ajw_chat_knowledge_filter", knowledgeCategoryFilter);
+        renderSidePanel();
+      });
+    });
 
     host.querySelectorAll("[data-kn-del]").forEach(function (el) {
       el.addEventListener("click", function () {
