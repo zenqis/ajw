@@ -653,24 +653,28 @@ app.post("/api/shopee/live-push", jsonFromRaw, async (req, res) => {
   if (!verified) return res.status(401).json({ ok: false, error: "invalid_signature" });
 
   const payload = req.body || {};
-  await insertWebhookEvent(
-    String(payload.code || payload.push_code || payload.type || ""),
-    JSON.stringify(payload),
-    nowIso()
-  );
-
   const shopId = String(payload.shop_id || payload.shopid || "");
   const conversationId = String(payload.conversation_id || "");
-  try {
-    if (shopId && conversationId) {
-      await syncConversationMessages(shopId, conversationId);
-    } else if (shopId) {
-      await syncConversations(shopId, { syncMessages: false, pageSize: 100 });
-    }
-  } catch (err) {
-    console.error("live-push sync warning:", err.message || err);
-  }
+
+  // Ack fast to minimize push failure/timeout in Shopee monitor.
   res.json({ ok: true });
+
+  Promise.resolve()
+    .then(async () => {
+      await insertWebhookEvent(
+        String(payload.code || payload.push_code || payload.type || ""),
+        JSON.stringify(payload),
+        nowIso()
+      );
+      if (shopId && conversationId) {
+        await syncConversationMessages(shopId, conversationId);
+      } else if (shopId) {
+        await syncConversations(shopId, { syncMessages: false, pageSize: 100 });
+      }
+    })
+    .catch((err) => {
+      console.error("live-push async warning:", err.message || err);
+    });
 });
 
 app.post("/api/chat/sync", async (req, res) => {
