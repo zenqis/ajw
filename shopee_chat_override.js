@@ -21,6 +21,10 @@
   var aiDraftsCache = [];
   var aiLearningCache = [];
   var aiLearningStats = null;
+  var aiBackendHealth = null;
+  var aiLastRunAt = 0;
+  var aiLastRunCount = 0;
+  var aiLastRunProvider = "";
   var aiSettings = null;
   var repliesManageMenu = window.localStorage.getItem("ajw_chat_replies_menu") || "quick";
   var knowledgeCategoryFilter = window.localStorage.getItem("ajw_chat_knowledge_filter") || "Semua";
@@ -266,6 +270,7 @@
       ".ajw-chat-pill.red{background:#7f1d1d;color:#fecaca}" +
       ".ajw-chat-pill.blue{background:#1d4ed8;color:#dbeafe}" +
       ".ajw-chat-pill.gold{background:#78350f;color:#fde68a}" +
+      ".ajw-chat-pill.green{background:#14532d;color:#bbf7d0}" +
       ".ajw-chat-filter{border:1px solid var(--bd);background:var(--bg3);color:var(--tx2);border-radius:999px;padding:5px 10px;font-size:10px;font-weight:700;cursor:pointer}" +
       ".ajw-chat-filter.on{border-color:#f59e0b;background:rgba(245,158,11,.16);color:#b45309}" +
       ".ajw-chat-thread{flex:1;min-height:0;overflow:auto;padding:16px;background:radial-gradient(800px 280px at 80% 0,rgba(56,189,248,.07),transparent),linear-gradient(180deg,#141820,#0f1217)}" +
@@ -567,6 +572,15 @@
     aiLearningStats = data.stats || null;
   }
 
+  async function loadAiHealth() {
+    try {
+      var data = await apiGet("/health");
+      aiBackendHealth = data && data.ai ? data.ai : null;
+    } catch (_e) {
+      aiBackendHealth = null;
+    }
+  }
+
   async function syncAll(refreshProducts) {
     currentShopId = selectedShopId();
     if (!currentShopId) throw new Error("shop_id wajib");
@@ -578,6 +592,7 @@
     await loadKnowledge();
     await loadAiSettings();
     await loadAiLearning();
+    await loadAiHealth();
     await loadProducts(!!refreshProducts);
   }
 
@@ -682,7 +697,7 @@
         currentShopId = String(el.getAttribute("data-shop-id") || "");
         selectedConversationId = "";
         window.localStorage.setItem("ajw_chat_shop_id", currentShopId);
-        Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings(), loadAiLearning()]).then(function () {
+        Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings(), loadAiLearning(), loadAiHealth()]).then(function () {
           if (selectedConversationId) {
             loadMessages().then(function () {
               Promise.all([loadOrders(false), loadAiDrafts()]).then(renderAll);
@@ -1640,6 +1655,12 @@
         var requireApproval = Boolean((document.getElementById("CHAT-AI-APPROVAL") || {}).checked);
         var provider = String((document.getElementById("CHAT-AI-PROVIDER") || {}).value || "smart");
         var promptPreset = String((document.getElementById("CHAT-AI-PROMPT") || {}).value || "").trim();
+        if (provider === "openai" && aiBackendHealth && !aiBackendHealth.openai_ready) {
+          toast("OPENAI_API_KEY belum terdeteksi. AI akan fallback ke mode smart.", "warn");
+        }
+        if (provider === "claude" && aiBackendHealth && !aiBackendHealth.claude_ready) {
+          toast("ANTHROPIC_API_KEY belum terdeteksi. AI akan fallback ke mode smart.", "warn");
+        }
         apiPost("/api/chat/ai/settings", {
           shop_id: currentShopId,
           ai_enabled: aiEnabled,
@@ -1805,10 +1826,21 @@
     var info = document.getElementById("CHAT-ACTIVITY");
     if (!info) return;
     var conv = currentConversation();
+    var provider = aiSettings && aiSettings.provider ? String(aiSettings.provider) : "-";
+    var providerReady = provider === "openai"
+      ? Boolean(aiBackendHealth && aiBackendHealth.openai_ready)
+      : provider === "claude"
+      ? Boolean(aiBackendHealth && aiBackendHealth.claude_ready)
+      : true;
+    var runText = aiLastRunAt
+      ? "AI run " + fmtTs(Math.floor(aiLastRunAt / 1000)) + " (" + aiLastRunCount + ")"
+      : "AI belum jalan";
     info.innerHTML =
       '<span class="ajw-chat-pill gold">Realtime ' + (realtimeEnabled ? "On" : "Off") + "</span>" +
       '<span class="ajw-chat-pill blue">Toko ' + escSafe(currentShopId || "-") + "</span>" +
-      '<span class="ajw-chat-pill ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "blue" : "red") + '">AI ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "On" : "Review") + "</span>" +
+      '<span class="ajw-chat-pill ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "blue" : "red") + '">AI ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "On" : "Off") + "</span>" +
+      '<span class="ajw-chat-pill ' + (providerReady ? "green" : "red") + '">' + escSafe(provider) + (providerReady ? " ready" : " not-ready") + "</span>" +
+      '<span class="ajw-chat-pill">' + escSafe(runText) + "</span>" +
       (conv ? '<span class="ajw-chat-pill red">Pelanggan ' + escSafe(conv.to_name || conv.to_id || "-") + "</span>" : "");
     var realtimeBtn = document.getElementById("CHAT-REALTIME");
     if (realtimeBtn) realtimeBtn.textContent = realtimeEnabled ? "Realtime On" : "Realtime Off";
@@ -1870,15 +1902,19 @@
     if (!autonomousEnabled || !currentShopId || window._activeTab !== "chat" || autonomousInFlight) return;
     autonomousInFlight = true;
     try {
-      await apiPost("/api/chat/ai/autonomous/run", {
+      var out = await apiPost("/api/chat/ai/autonomous/run", {
         shop_id: currentShopId,
         limit: 5
       });
+      aiLastRunAt = Date.now();
+      aiLastRunCount = Number((out && out.count) || 0);
+      aiLastRunProvider = out && out.provider ? String(out.provider) : "";
       refreshConversationsBg();
       if (selectedConversationId) {
         await loadMessages();
         renderMessages();
       }
+      renderHeaderState();
     } catch (_err) {
     } finally {
       autonomousInFlight = false;
@@ -2137,7 +2173,7 @@
         selectedConversationId = "";
         Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false)])
           .then(function () {
-            return Promise.all([loadKnowledge(), loadAiSettings(), loadAiLearning()]);
+            return Promise.all([loadKnowledge(), loadAiSettings(), loadAiLearning(), loadAiHealth()]);
           })
           .then(function () {
             renderAll();

@@ -651,30 +651,101 @@ async function sendShopeeMedia(shopId, conversationId, mediaType, url, caption) 
   ]);
 }
 
-function smartReplyFromText(text, templates = []) {
-  const raw = String(text || "").toLowerCase();
-  if (!raw) return templates[0] || "Halo kak, terima kasih sudah menghubungi kami. Ada yang bisa kami bantu?";
-  if (raw.includes("stok")) {
+function smartReplyFromText(
+  text,
+  { templates = [], historyRows = [], orderBrief = [], productBrief = [], learningRows = [] } = {}
+) {
+  const raw = String(text || "").trim();
+  const lower = raw.toLowerCase();
+  const normalize = (s) => String(s || "").toLowerCase();
+  const pickTemplate = (re) => templates.find((t) => re.test(normalize(t)));
+  const firstProduct = productBrief && productBrief[0] ? productBrief[0] : null;
+  const firstOrder = orderBrief && orderBrief[0] ? orderBrief[0] : null;
+  const learningExample = learningRows && learningRows[0] ? String(learningRows[0].seller_text || "") : "";
+
+  if (!raw) {
     return (
-      templates.find((t) => /stok/i.test(t)) ||
-      "Untuk stok saat ini tersedia kak. Silakan infokan varian yang dibutuhkan ya."
+      learningExample ||
+      templates[0] ||
+      "Halo kak, terima kasih sudah hubungi Anton Pancing. Boleh info kendala atau produk yang ingin dicari?"
     );
   }
-  if (raw.includes("kirim") || raw.includes("resi")) {
+
+  const wantsCatalog = /katalog|pilihan|list|daftar|lengkap|semua produk|lihat produk/.test(lower);
+  const asksStock = /stok|ready|tersedia|habis/.test(lower);
+  const asksPrice = /harga|diskon|promo|murah|berapa/.test(lower);
+  const asksShipping = /kirim|pengiriman|resi|tracking|ongkir|sampai kapan|estimasi/.test(lower);
+  const asksBuy = /checkout|order|beli|ambil|gas|lanjut/.test(lower);
+  const complaint = /komplain|komplain|retur|refund|rusak|salah kirim|belum sampai|kecewa/.test(lower);
+  const asksRecommend = /rekomendasi|saran|cocok|bagus buat|pilih yang mana/.test(lower);
+
+  if (complaint) {
     return (
-      templates.find((t) => /kirim|resi/i.test(t)) ||
-      "Pesanan akan diproses sesuai antrean dan nomor resi otomatis muncul setelah paket dikirim ya kak."
+      pickTemplate(/retur|refund|maaf|kendala|komplain/) ||
+      "Mohon maaf ya kak atas kendalanya. Biar cepat dibantu, kirim nomor pesanan dan foto atau video kendalanya ya, nanti kami follow up segera."
     );
   }
-  if (raw.includes("harga") || raw.includes("diskon")) {
+
+  if (asksShipping) {
+    if (firstOrder && firstOrder.order_sn) {
+      return `Untuk pesanan ${firstOrder.order_sn}, status saat ini ${firstOrder.status || "diproses"} ya kak. Jika sudah dikirim, nomor resi akan otomatis muncul di detail pesanan.`;
+    }
     return (
-      templates.find((t) => /harga|diskon|promo/i.test(t)) ||
-      "Harga dan promo mengikuti yang tampil di etalase. Jika ada promo aktif, otomatis terpotong saat checkout."
+      pickTemplate(/kirim|resi|pengiriman|tracking/) ||
+      "Siap kak, pesanan diproses sesuai antrean. Nomor resi otomatis muncul setelah paket dikirim. Kalau berkenan, kirim nomor pesanan agar kami bantu cek lebih detail."
     );
   }
+
+  if (asksStock && firstProduct) {
+    return `Untuk ${firstProduct.item_name || "produk ini"}, stok terpantau ${firstProduct.stock ?? "-"} ya kak. Kalau mau, saya bantu arahkan ke varian yang paling ready.`;
+  }
+  if (asksStock) {
+    return (
+      pickTemplate(/stok|ready|tersedia|habis/) ||
+      "Siap kak, untuk cek stok paling akurat mohon sebutkan nama produk atau variannya ya, nanti kami cekkan langsung."
+    );
+  }
+
+  if (asksPrice && firstProduct) {
+    return `Harga ${firstProduct.item_name || "produk ini"} bisa dicek di etalase ya kak, dan promo aktif akan otomatis terpotong saat checkout.`;
+  }
+  if (asksPrice) {
+    return (
+      pickTemplate(/harga|promo|diskon/) ||
+      "Untuk harga terbaru dan promo, silakan cek di etalase produk ya kak karena update-nya realtime."
+    );
+  }
+
+  if (asksRecommend) {
+    return (
+      pickTemplate(/rekomendasi|cocok|saran/) ||
+      "Siap kak, biar pas saya bantu rekomendasikan. Kakak biasa mancing target ikan apa dan kisaran budget berapa?"
+    );
+  }
+
+  if (wantsCatalog) {
+    return (
+      pickTemplate(/katalog|pilihan|website|shopee|lazada/) ||
+      "Kalau mau lihat pilihan lengkap, bisa cek katalog toko kami di website, Shopee, atau Lazada ya kak."
+    );
+  }
+
+  if (asksBuy) {
+    return (
+      pickTemplate(/order|checkout|beli/) ||
+      "Siap kak, kalau produknya sudah cocok bisa langsung checkout ya. Kalau perlu, saya bantu pilihkan varian yang paling pas."
+    );
+  }
+
+  const latestHistory = historyRows && historyRows.length ? String(historyRows[historyRows.length - 1].text || "") : "";
+  if (latestHistory && latestHistory !== raw && /ukuran|warna|varian|tipe/.test(lower)) {
+    return "Siap kak, untuk memastikan varian yang tepat boleh infokan ukuran atau tipe yang dicari ya.";
+  }
+
   return (
+    learningExample ||
     templates[0] ||
-    "Baik kak, terima kasih infonya. Kami bantu cek dulu, mohon tunggu sebentar ya."
+    "Siap kak, kami bantu ya. Boleh infokan nama produk atau kebutuhan utama kakak supaya kami arahkan yang paling cocok."
   );
 }
 
@@ -887,6 +958,7 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
   let text = "";
   let provider = String(settings.provider || "smart").toLowerCase();
   let model = String(settings.model || "");
+  let fallbackReason = "";
   const orderBrief = recentOrders.slice(0, 3).map((o) => ({
     order_sn: o.order_sn,
     status: o.order_status,
@@ -920,6 +992,7 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
       });
     } catch (_err) {
       provider = "smart";
+      fallbackReason = "openai_error";
     }
   } else if ((provider === "claude" || provider === "anthropic") && anthropicKey) {
     try {
@@ -938,7 +1011,14 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
       });
     } catch (_err) {
       provider = "smart";
+      fallbackReason = "claude_error";
     }
+  } else if (provider === "openai" && !openAiKey) {
+    provider = "smart";
+    fallbackReason = "openai_key_missing";
+  } else if ((provider === "claude" || provider === "anthropic") && !anthropicKey) {
+    provider = "smart";
+    fallbackReason = "claude_key_missing";
   }
 
   if (!text) {
@@ -946,9 +1026,15 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
       ...selectedLearning.map((l) => l.seller_text),
       ...selectedKnowledge.map((k) => k.template)
     ].filter(Boolean);
-    text = smartReplyFromText(incomingText, templates);
+    text = smartReplyFromText(incomingText, {
+      templates,
+      historyRows,
+      orderBrief,
+      productBrief,
+      learningRows: selectedLearning
+    });
     provider = "smart";
-    model = "rule-engine";
+    model = fallbackReason ? `rule-engine(${fallbackReason})` : "rule-engine";
   }
 
   return {
@@ -1740,6 +1826,17 @@ app.post("/api/chat/ai/autonomous/run", async (req, res) => {
     const limit = Math.min(30, Math.max(1, Number(req.body.limit || 5)));
     const dryRun = Boolean(req.body.dry_run);
     if (!shopId) throw new Error("shop_id wajib");
+    const aiSettings = (await getAiSetting(shopId)) || defaultAiSetting(shopId);
+    if (Number(aiSettings.ai_enabled || 0) === 0) {
+      return res.json({
+        ok: true,
+        disabled: true,
+        message: "AI belum aktif. Aktifkan AI di Mode AI terlebih dahulu.",
+        rows: [],
+        count: 0,
+        provider: String(aiSettings.provider || "smart")
+      });
+    }
 
     if (autonomousRunLock.get(shopId)) {
       return res.json({ ok: true, busy: true, rows: [] });
@@ -1811,7 +1908,13 @@ app.post("/api/chat/ai/autonomous/run", async (req, res) => {
         });
       }
 
-      res.json({ ok: true, dry_run: dryRun, count: rows.length, rows });
+      res.json({
+        ok: true,
+        dry_run: dryRun,
+        count: rows.length,
+        rows,
+        provider: String(aiSettings.provider || "smart")
+      });
     } finally {
       autonomousRunLock.delete(shopId);
     }
