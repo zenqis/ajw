@@ -1,5 +1,10 @@
 (function () {
-  var API_BASE = window.localStorage.getItem("ajw_chat_api_base") || "http://localhost:3010";
+  var DEFAULT_API_BASE = (function () {
+    var host = String(window.location.hostname || "").toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1") return "http://localhost:3010";
+    return String(window.location.origin || "").replace(/\/$/, "");
+  })();
+  var API_BASE = window.localStorage.getItem("ajw_chat_api_base") || DEFAULT_API_BASE;
   var currentShopId = window.localStorage.getItem("ajw_chat_shop_id") || "";
   var selectedConversationId = "";
   var activeFilter = window.localStorage.getItem("ajw_chat_filter") || "all";
@@ -50,8 +55,9 @@
     style.textContent =
       "#V-chat{width:100%;max-width:none!important;position:fixed;left:0;right:0;top:52px;bottom:0;z-index:40;background:radial-gradient(1200px 500px at 20% -20%,rgba(245,158,11,.08),transparent),linear-gradient(180deg,#111317,#0b0d10)}" +
       ".ajw-chat-shell{display:grid;grid-template-columns:220px 340px minmax(0,1fr) 360px;gap:0;height:calc(100vh - 52px - 58px);border:1px solid var(--bd);border-radius:0;background:linear-gradient(180deg,var(--bg2),var(--bg4));overflow:hidden}" +
-      ".ajw-chat-col{min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--bd);background:linear-gradient(180deg,rgba(24,27,33,.9),rgba(16,18,22,.9))}" +
+      ".ajw-chat-col{min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--bd);background:linear-gradient(180deg,rgba(24,27,33,.9),rgba(16,18,22,.9))}" +
       ".ajw-chat-col:last-child{border-right:none}" +
+      ".ajw-chat-main{display:grid;grid-template-rows:auto minmax(0,1fr) auto}" +
       ".ajw-chat-head{padding:12px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px;background:linear-gradient(180deg,rgba(36,40,47,.86),rgba(25,28,33,.86))}" +
       ".ajw-chat-body{flex:1;min-height:0;overflow:auto}" +
       ".ajw-chat-toolbar{display:grid;grid-template-columns:1.2fr 180px auto auto auto;gap:8px;padding:10px 12px;margin-bottom:0;border:1px solid var(--bd);border-bottom:none;border-radius:0;background:linear-gradient(180deg,#1c2027,#14181e)}" +
@@ -65,7 +71,7 @@
       ".ajw-chat-pill.gold{background:#78350f;color:#fde68a}" +
       ".ajw-chat-filter{border:1px solid var(--bd);background:var(--bg3);color:var(--tx2);border-radius:999px;padding:5px 10px;font-size:10px;font-weight:700;cursor:pointer}" +
       ".ajw-chat-filter.on{border-color:#f59e0b;background:rgba(245,158,11,.16);color:#b45309}" +
-      ".ajw-chat-thread{flex:1;overflow:auto;padding:16px;background:radial-gradient(800px 280px at 80% 0,rgba(56,189,248,.07),transparent),linear-gradient(180deg,#141820,#0f1217)}" +
+      ".ajw-chat-thread{flex:1;min-height:0;overflow:auto;padding:16px;background:radial-gradient(800px 280px at 80% 0,rgba(56,189,248,.07),transparent),linear-gradient(180deg,#141820,#0f1217)}" +
       ".ajw-chat-bubble-row{display:flex;margin-bottom:10px}" +
       ".ajw-chat-bubble-row.mine{justify-content:flex-end}" +
       ".ajw-chat-bubble{max-width:76%;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(29,33,41,.88);color:var(--tx)}" +
@@ -947,7 +953,7 @@
       "</div>" +
       '<div id="CHAT-CONV-LIST" class="ajw-chat-body"></div>' +
       "</div>" +
-      '<div class="ajw-chat-col" style="position:relative">' +
+      '<div class="ajw-chat-col ajw-chat-main" style="position:relative">' +
       '<div class="ajw-chat-head"><div style="font-size:13px;font-weight:800;color:var(--tx)">Chat</div><div style="font-size:11px;color:var(--tx3)">Live panel</div></div>' +
       '<div id="CHAT-MESSAGES" class="ajw-chat-thread"></div>' +
       '<div class="ajw-chat-compose">' +
