@@ -175,10 +175,7 @@ app.get("/", (_req, res) => {
 
 app.get("/api/shopee/oauth/url", (req, res) => {
   try {
-    const shopId = String(req.query.shop_id || "");
-    const url = buildAuthUrl({
-      redirectUrl: shopId ? `${redirectUrl}?shop_id=${encodeURIComponent(shopId)}` : redirectUrl
-    });
+    const url = buildAuthUrl({ redirectUrl });
     res.json({ ok: true, url });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
@@ -188,7 +185,10 @@ app.get("/api/shopee/oauth/url", (req, res) => {
 app.get("/api/shopee/oauth/callback", async (req, res) => {
   try {
     const code = String(req.query.code || "");
-    const shopId = String(req.query.shop_id || "");
+    const rawShopId = req.query.shop_id;
+    const shopId = Array.isArray(rawShopId)
+      ? String(rawShopId[rawShopId.length - 1] || "")
+      : String(rawShopId || "");
     if (!code || !shopId) throw new Error("Parameter code/shop_id tidak lengkap.");
 
     const path = "/api/v2/auth/token/get";
