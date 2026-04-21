@@ -1954,6 +1954,32 @@
     _analyticsUI[key] = !_analyticsUI[key];
     _renderAnalytics('customers');
   };
+  function aProductsTab(){
+    if(typeof _toolsProductSummary!=='function') return '<div class="card"><div style="font-size:12px;color:var(--tx2)">Modul rincian produk belum siap.</div></div>';
+    var ps=_toolsProductSummary();
+    var series=_toolsProductMonthlySeries();
+    var ui=_toolsProductUi();
+    var changes=_toolsProductModalChanges();
+    var cat1Opts=_toolsProductCategoryOptions(1);
+    var cat2Opts=_toolsProductCategoryOptions(2);
+    var masterCount=_toolsProductMasterRows().length;
+    var prod='';
+    prod+='<div class="card" style="margin-bottom:12px;background:#080808;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:800;color:#fff">Rincian Produk</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Database SKU produk untuk memantau stok, modal, kategori, dan rata-rata penjualan harian. Template acuan akan menjadi basis baku, sedangkan import regular hanya memperbarui SKU yang sudah ada di template tersebut.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btnsm" onclick="_toolsProductDownloadTemplate()">Template Import</button><button class="btns" onclick="_toolsProductImportMasterFile()">Upload Template Acuan</button><button class="btns" onclick="_toolsProductImportFile()">Import Update</button>'+(ui.edit?'<button class="btnp" onclick="_toolsProductSaveTableEdits()">Simpan Edit</button><button class="btnsm" onclick="_toolsProductToggleEditMode(false)">Batal</button>':'<button class="btnsm" onclick="_toolsProductToggleEditMode(true)">Mode Edit</button>')+'<button class="btnsm" onclick="confirmDelete(\'Hapus seluruh database rincian produk?\',function(){_toolProductRows=[];_toolsSave();_toolsProductRefreshView()})">Hapus Semua</button></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">Template acuan: '+masterCount+' SKU</span><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">Baris tampil: '+ps.rows.length+'</span></div></div>';
+    prod+='<div style="display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:10px;margin-bottom:12px">';
+    [['Total Stok',fmt(ps.totalStock),'Akumulasi stok aktif','#8FD0FF'],['Total Modal',_toolsMoney(ps.totalModal),'Modal x total stok','#F0C56A'],['Rata-rata Penjualan Harian',fmt(Math.round(ps.avgDaily*100)/100),'Rerata estimasi per produk','#A7F3B6'],['Kategori Terlaris',esc(ps.topCategory||'-'),fmt(Math.round(ps.topCategoryDaily*100)/100)+' estimasi / hari','#D7E1EA']].forEach(function(card){
+      prod+='<div class="card" style="background:#050505;border:1px solid rgba(255,255,255,.08);padding:12px 14px"><div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.62)">'+card[0]+'</div><div style="font-size:24px;font-weight:900;color:'+card[3]+';margin-top:6px;word-break:break-word">'+card[1]+'</div><div style="font-size:11px;color:var(--tx2);margin-top:5px">'+card[2]+'</div></div>';
+    });
+    prod+='</div>';
+    prod+='<div class="card" style="margin-bottom:12px;background:#050505;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:#fff">Trend Total Modal Stok</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Membandingkan total modal stok berdasarkan bulan import terakhir per SKU.</div></div><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">'+(series.length?series.length:0)+' bulan</span></div><div style="height:220px;margin-top:10px"><canvas id="TOOLS-PRODUCT-CHART"></canvas></div></div>';
+    prod+='<div class="card" style="margin-bottom:12px;background:#050505;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:#fff">Perubahan Modal Produk</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Riwayat perubahan modal per SKU dari import atau edit manual terbaru.</div></div><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">'+changes.length+' perubahan</span></div><div style="margin-top:10px;display:grid;gap:8px">'+(changes.length?changes.slice(0,8).map(function(ch){ return '<div style="display:grid;grid-template-columns:minmax(180px,1.2fr) repeat(3,minmax(110px,.7fr)) minmax(150px,.8fr);gap:10px;align-items:center;padding:10px 12px;border-radius:12px;background:#070707;border:1px solid rgba(255,255,255,.06)"><div><div style="font-size:12px;font-weight:800;color:#fff">'+esc(ch.sku||'-')+'</div><div style="font-size:11px;color:var(--tx2);margin-top:2px">'+esc(ch.title||'-')+'</div></div><div><div style="font-size:10px;color:var(--tx2);text-transform:uppercase">Modal Lama</div><div style="font-size:12px;font-weight:700;color:#D7E1EA">'+_toolsMoney(ch.from)+'</div></div><div><div style="font-size:10px;color:var(--tx2);text-transform:uppercase">Modal Baru</div><div style="font-size:12px;font-weight:700;color:#fff">'+_toolsMoney(ch.to)+'</div></div><div><div style="font-size:10px;color:var(--tx2);text-transform:uppercase">Delta</div><div style="font-size:12px;font-weight:800;color:'+(ch.delta>=0?'#A7F3B6':'#FF8A80')+'">'+(ch.delta>=0?'+':'-')+_toolsMoney(Math.abs(ch.delta))+' ('+(ch.pct>=0?'+':'')+fmt(Math.round(ch.pct*100)/100)+'%)</div></div><div style="font-size:11px;color:var(--tx2)">'+esc(_toolsProductFormatDate(ch.updatedAt))+'</div></div>'; }).join(''):'<div style="padding:12px;border:1px dashed rgba(255,255,255,.12);border-radius:12px;color:var(--tx2);font-size:11px">Belum ada perubahan modal yang tercatat. Gunakan import update atau edit manual untuk mencatat histori modal.</div>')+'</div></div>';
+    prod+='<div class="card" style="background:#070707;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div><div style="font-size:13px;font-weight:800;color:#fff">Daftar Produk Aktif</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Snapshot terbaru per SKU dari template acuan dan histori pembaruan yang pernah Anda masukkan.</div></div><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">'+ps.rows.length+' SKU aktif</span></div><div style="display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin-bottom:10px"><div><label class="lbl">Sort</label><select class="fi" onchange="_toolsProductSetSort(this.value)"><option value="updated_desc"'+(ui.sort==='updated_desc'?' selected':'')+'>Terbaru Diperbarui</option><option value="sku_asc"'+(ui.sort==='sku_asc'?' selected':'')+'>SKU A-Z</option><option value="title_asc"'+(ui.sort==='title_asc'?' selected':'')+'>Nama Produk A-Z</option><option value="stock_desc"'+(ui.sort==='stock_desc'?' selected':'')+'>Stok Tertinggi</option><option value="modal_desc"'+(ui.sort==='modal_desc'?' selected':'')+'>Modal Tertinggi</option><option value="daily_desc"'+(ui.sort==='daily_desc'?' selected':'')+'>Penjualan Harian Tertinggi</option></select></div><div><label class="lbl">Kategori 1</label><select class="fi" onchange="_toolsProductSetCategory(1,this.value)"><option value="all"'+(ui.cat1==='all'?' selected':'')+'>Semua Kategori 1</option><option value="__NONE__"'+(ui.cat1==='__NONE__'?' selected':'')+'>Tanpa Kategori</option>'+cat1Opts.filter(function(v){ return v!=='__NONE__'; }).map(function(v){ return '<option value="'+escAttr(v)+'"'+(ui.cat1===v?' selected':'')+'>'+esc(v)+'</option>'; }).join('')+'</select></div><div><label class="lbl">Kategori 2</label><select class="fi" onchange="_toolsProductSetCategory(2,this.value)"><option value="all"'+(ui.cat2==='all'?' selected':'')+'>Semua Kategori 2</option><option value="__NONE__"'+(ui.cat2==='__NONE__'?' selected':'')+'>Tanpa Kategori</option>'+cat2Opts.filter(function(v){ return v!=='__NONE__'; }).map(function(v){ return '<option value="'+escAttr(v)+'"'+(ui.cat2===v?' selected':'')+'>'+esc(v)+'</option>'; }).join('')+'</select></div><div style="display:flex;align-items:end;justify-content:flex-end"><button class="btnsm" onclick="_toolsProductToggleEditMode('+(ui.edit?'false':'true')+')">'+(ui.edit?'Batalkan Edit':'Edit Tabel')+'</button></div></div><div style="overflow:auto"><table class="tbl"><thead><tr><th>Tautan Gambar</th><th>Nomor SKU</th><th>Judul</th><th>Total Stok</th><th>Perkiraan Penjualan Harian</th><th>Rata-Rata Modal Bobot</th><th>Kategori Pertama</th><th>Kategori Kedua</th><th>Terakhir Diperbarui</th></tr></thead><tbody>';
+    if(!ps.rows.length) prod+='<tr><td colspan="9" style="text-align:center;color:var(--tx2)">'+(masterCount?'Belum ada data sesuai filter kategori atau sort yang dipilih.':'Belum ada data produk. Upload template acuan dulu untuk mulai membangun database produk.')+'</td></tr>';
+    ps.rows.forEach(function(r){
+      prod+='<tr><td>'+(ui.edit?'<input id="TP-EDIT-IMG-'+r.id+'" class="fi" value="'+escAttr(r.imageUrl||'')+'" placeholder="https://...">':(r.imageUrl?'<button class="btnsm" onclick="_toolsProductOpenImage(\''+String(r.imageUrl||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\',\''+String(r.title||r.sku||'Produk').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">Buka</button>':'-'))+'</td><td style="font-weight:700">'+(ui.edit?'<input id="TP-EDIT-SKU-'+r.id+'" class="fi" value="'+escAttr(r.sku||'')+'" placeholder="SKU">':esc(r.sku||'-'))+'</td><td style="min-width:260px">'+(ui.edit?'<input id="TP-EDIT-TITLE-'+r.id+'" class="fi" value="'+escAttr(r.title||'')+'" placeholder="Nama produk">':esc(r.title||'-'))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-STOCK-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.totalStock)))+'">':fmt(r.totalStock))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-DAILY-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.dailySales)))+'">':fmt(Math.round(_num(r.dailySales)*100)/100))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-COST-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.avgCost)))+'">':_toolsMoney(r.avgCost))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-CAT1-'+r.id+'" class="fi" value="'+escAttr(r.category1||'')+'" placeholder="Kategori 1">':esc(r.category1||'-'))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-CAT2-'+r.id+'" class="fi" value="'+escAttr(r.category2||'')+'" placeholder="Kategori 2">':esc(r.category2||'-'))+'</td><td style="white-space:nowrap">'+esc(_toolsProductFormatDate(r.updatedAt||r.importedAt))+'</td></tr>';
+    });
+    prod+='</tbody></table></div></div>';
+    return prod;
+  }
 
   window._renderAnalytics = function(sub){
     aEnsureViews();
@@ -1967,18 +1993,20 @@
       sales:'ANALYTICS // PENJUALAN',
       service:'ANALYTICS // LAYANAN',
       promo:'ANALYTICS // PROMOSI',
-      customers:'ANALYTICS // CUSTOMER DATA'
+      customers:'ANALYTICS // CUSTOMER DATA',
+      products:'ANALYTICS // RINCIAN PRODUK'
     };
     var descs = {
       dash:'Command monitor untuk insight analytics.',
       sales:'Input dan pantau data penjualan.',
       service:'Pantau kualitas layanan dan response.',
       promo:'Monitor performa promosi dan campaign.',
-      customers:'Geomap, order intel, repeat buyer, dan quality check.'
+      customers:'Geomap, order intel, repeat buyer, dan quality check.',
+      products:'Database SKU, stok, modal, kategori, dan tren perubahan produk.'
     };
     var h = '<div style="'+wrapStyle+'">';
     h += '<div class="card" style="padding:10px 12px;background:linear-gradient(180deg,#101418,#0b0d10);border:1px solid rgba(255,255,255,.07)"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:16px;font-weight:900;color:#fff;letter-spacing:.14em">'+titles[sub]+'</div><div style="font-size:11px;color:#8fa6bb;margin-top:4px">'+descs[sub]+'</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">';
-    [['dash','Dashboard'],['sales','Penjualan'],['service','Layanan'],['promo','Promosi'],['customers','Customer Data']].forEach(function(tab){
+    [['dash','Dashboard'],['sales','Penjualan'],['service','Layanan'],['promo','Promosi'],['customers','Customer Data'],['products','Rincian Produk']].forEach(function(tab){
       h += '<button class="'+(sub===tab[0]?'btnp':'btns')+'" onclick="_renderAnalytics(\''+tab[0]+'\')" style="padding:8px 12px;'+(sub===tab[0]?'background:#8C5E16;border-color:#8C5E16':'')+'">'+tab[1]+'</button>';
     });
     h += '</div></div></div>';
@@ -1987,12 +2015,16 @@
     else if(sub === 'service') h += aServiceTab();
     else if(sub === 'promo') h += aPromoTab();
     else if(sub === 'customers') h += aCustomerTab();
+    else if(sub === 'products') h += aProductsTab();
     h += '</div>';
     v.innerHTML = h;
     if(sub === 'customers'){
       aEnsureMapLibre(function(){ aRenderCustomerProtomap(_analyticsData.customers || [], 'ANA-CUSTOMER-MAP'); });
     }else if(sub === 'dash'){
       aEnsureMapLibre(function(){ aRenderCustomerProtomap(_analyticsData.customers || [], 'ANA-DASH-MAP'); });
+    }else if(sub === 'products'){
+      aDisposeMap();
+      try{ if(typeof _toolsProductRenderChart==='function') _toolsProductRenderChart(); }catch(e){}
     }else{
       aDisposeMap();
     }
