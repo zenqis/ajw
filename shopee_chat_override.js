@@ -130,11 +130,12 @@
       ".ajw-ai-draft{margin-top:8px;padding:10px;border:1px solid var(--bd);border-radius:10px;background:rgba(16,20,28,.92)}" +
       ".ajw-ai-draft textarea{width:100%;min-height:90px;resize:vertical;margin-top:8px}" +
       ".ajw-two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}" +
-      ".ajw-reply-layout{display:grid;grid-template-columns:170px minmax(0,1fr);gap:10px}" +
+      ".ajw-reply-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:12px;min-height:100%}" +
       ".ajw-reply-side{border:1px solid var(--bd);border-radius:12px;background:rgba(20,23,30,.92);padding:8px}" +
       ".ajw-reply-side button{width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--tx2);padding:10px 10px;border-radius:10px;cursor:pointer;font-size:12px;font-weight:700}" +
       ".ajw-reply-side button.on{background:rgba(59,130,246,.18);border-color:rgba(59,130,246,.45);color:#dbeafe}" +
       ".ajw-reply-main{min-width:0}" +
+      ".ajw-reply-page{padding:12px;min-height:100%;overflow:auto}" +
       ".ajw-shop-shell{display:grid;grid-template-columns:42px minmax(0,1fr);min-height:0;flex:1}" +
       ".ajw-shop-icons{border-right:1px solid var(--bd);background:linear-gradient(180deg,#202531,#171b23);padding:8px 4px;display:flex;flex-direction:column;gap:6px;align-items:center}" +
       ".ajw-shop-ico{width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--tx2)}" +
@@ -575,6 +576,10 @@
   function renderMessages() {
     var host = document.getElementById("CHAT-MESSAGES");
     if (!host) return;
+    if (activeSideTab === "replies") {
+      host.innerHTML = '<div class="ajw-reply-page">' + renderRepliesTab() + "</div>";
+      return;
+    }
     if (!selectedConversationId) {
       host.innerHTML = '<div class="ajw-chat-empty">Pilih percakapan di kiri untuk mulai membalas.</div>';
       return;
@@ -954,26 +959,26 @@
     var grouped = quickRepliesCache.filter(function (row) {
       return normalizeReplyGroup(row.group_name) === replyGroupFilter;
     });
-    var menuButtons =
-      '<div class="ajw-reply-top" style="margin-bottom:8px">' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-      '<button class="ajw-chip ' + (repliesManageMenu === "quick" ? "on" : "") + '" data-replies-menu="quick">Balasan Cepat</button>' +
-      '<button class="ajw-chip ' + (repliesManageMenu === "managequick" ? "on" : "") + '" data-replies-menu="managequick">Tambah Balasan</button>' +
-      '<button class="ajw-chip ' + (repliesManageMenu === "knowledge" ? "on" : "") + '" data-replies-menu="knowledge">Pusat Informasi</button>' +
-      '<button class="ajw-chip ' + (repliesManageMenu === "ai" ? "on" : "") + '" data-replies-menu="ai">Mode AI</button>' +
-      "</div>" +
+    var menuSidebar =
+      '<div class="ajw-reply-side">' +
+      '<button class="' + (repliesManageMenu === "quick" ? "on" : "") + '" data-replies-menu="quick">Balasan Cepat</button>' +
+      '<button class="' + (repliesManageMenu === "managequick" ? "on" : "") + '" data-replies-menu="managequick">Tambah Balasan</button>' +
+      '<button class="' + (repliesManageMenu === "knowledge" ? "on" : "") + '" data-replies-menu="knowledge">Pusat Informasi</button>' +
+      '<button class="' + (repliesManageMenu === "ai" ? "on" : "") + '" data-replies-menu="ai">Mode AI</button>' +
       "</div>";
 
     if (repliesManageMenu === "managequick") {
       return (
-        menuButtons +
+        '<div class="ajw-reply-layout">' + menuSidebar +
+        '<div class="ajw-reply-main">' +
         '<div class="ajw-chat-card">' +
         '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Balasan Cepat</div>' +
         '<input id="CHAT-QR-KEYWORD" class="fi" placeholder="Keyword pemicu (opsional)">' +
         '<input id="CHAT-QR-TITLE" class="fi" placeholder="Judul template" style="margin-top:8px">' +
         '<textarea id="CHAT-QR-CONTENT" class="fi" style="margin-top:8px;min-height:100px" placeholder="Template jawaban..."></textarea>' +
         '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-QR-ADD-FORM" class="btnp">Simpan Template</button></div>' +
-        "</div>"
+        "</div>" +
+        "</div></div>"
       );
     }
 
@@ -987,9 +992,9 @@
             return String(k.group_name || "General") === activeCat;
           });
       return (
-        menuButtons +
-        '<div class="ajw-reply-layout">' +
-        '<div class="ajw-reply-side">' +
+        '<div class="ajw-reply-layout">' + menuSidebar +
+        '<div class="ajw-reply-main">' +
+        '<div class="ajw-reply-side" style="margin-bottom:10px">' +
         '<button class="' + (activeCat === "Semua" ? "on" : "") + '" data-kn-filter="Semua">Semua ' + escSafe(catCounts.Semua || 0) + "</button>" +
         catOptions
           .filter(function (x) { return x !== "Semua"; })
@@ -998,7 +1003,6 @@
           })
           .join("") +
         "</div>" +
-        '<div class="ajw-reply-main">' +
         '<div class="ajw-chat-card">' +
         '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Referensi Kata Kunci</div>' +
         '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan">' +
@@ -1036,7 +1040,8 @@
 
     if (repliesManageMenu === "ai") {
       return (
-        menuButtons +
+        '<div class="ajw-reply-layout">' + menuSidebar +
+        '<div class="ajw-reply-main">' +
         '<div class="ajw-chat-card">' +
         '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Mode AI Balas Otomatis</div>' +
         '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
@@ -1050,12 +1055,14 @@
         '<button id="CHAT-AI-SAVE-SETTINGS" class="btns">Simpan Mode AI</button>' +
         "</div>" +
         '<div style="font-size:11px;color:var(--tx3);margin-top:8px">Draft AI direview dulu, lalu kirim manual supaya aman.</div>' +
-        "</div>"
+        "</div>" +
+        "</div></div>"
       );
     }
 
     return (
-      menuButtons +
+      '<div class="ajw-reply-layout">' + menuSidebar +
+      '<div class="ajw-reply-main">' +
       '<div class="ajw-reply-top">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       '<button class="ajw-chip ' + (replyGroupFilter === "Umum" ? "on" : "") + '" data-reply-group="Umum">Umum</button>' +
@@ -1078,19 +1085,19 @@
               );
             })
             .join("")
-        : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk grup ini.</div>')
+        : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk grup ini.</div>') +
+      "</div></div>"
     );
   }
 
   function renderSidePanel() {
     var host = document.getElementById("CHAT-RIGHT-CONTENT");
     if (!host) return;
-    host.innerHTML =
-      activeSideTab === "orders"
-        ? renderOrdersTab()
-        : activeSideTab === "products"
-        ? renderProductsTab()
-        : renderRepliesTab();
+    if (activeSideTab === "replies") {
+      host.innerHTML = '<div class="ajw-chat-empty">Panel Balasan Cepat dibuka di area utama (tengah) seperti halaman baru.</div>';
+    } else {
+      host.innerHTML = activeSideTab === "orders" ? renderOrdersTab() : renderProductsTab();
+    }
 
     var searchInput = document.getElementById("CHAT-PRODUCT-SEARCH");
     if (searchInput) {
@@ -1107,7 +1114,10 @@
       };
     }
 
-    host.querySelectorAll("[data-send-product]").forEach(function (el) {
+    var actionRoot = activeSideTab === "replies" ? document.getElementById("CHAT-MESSAGES") : host;
+    if (!actionRoot) actionRoot = host;
+
+    actionRoot.querySelectorAll("[data-send-product]").forEach(function (el) {
       el.addEventListener("click", function () {
         var itemId = String(el.getAttribute("data-send-product") || "");
         var row = productsCache.find(function (r) { return String(r.item_id) === itemId; });
@@ -1129,7 +1139,7 @@
       });
     });
 
-    var addReplyBtn = document.getElementById("CHAT-QR-ADD");
+    var addReplyBtn = actionRoot.querySelector("#CHAT-QR-ADD");
     if (addReplyBtn) {
       addReplyBtn.onclick = async function () {
         var title = prompt("Judul balasan cepat:");
@@ -1150,7 +1160,7 @@
       };
     }
 
-    var addReplyFormBtn = document.getElementById("CHAT-QR-ADD-FORM");
+    var addReplyFormBtn = actionRoot.querySelector("#CHAT-QR-ADD-FORM");
     if (addReplyFormBtn) {
       addReplyFormBtn.onclick = async function () {
         var keyword = String((document.getElementById("CHAT-QR-KEYWORD") || {}).value || "").trim();
@@ -1182,7 +1192,7 @@
       };
     }
 
-    host.querySelectorAll("[data-qr-use]").forEach(function (el) {
+    actionRoot.querySelectorAll("[data-qr-use]").forEach(function (el) {
       el.addEventListener("click", function () {
         var id = String(el.getAttribute("data-qr-use") || "");
         var row = quickRepliesCache.find(function (r) { return String(r.id) === id; });
@@ -1195,7 +1205,7 @@
       });
     });
 
-    host.querySelectorAll("[data-qr-del]").forEach(function (el) {
+    actionRoot.querySelectorAll("[data-qr-del]").forEach(function (el) {
       el.addEventListener("click", function () {
         var id = String(el.getAttribute("data-qr-del") || "");
         apiDelete("/api/chat/quick-replies/" + encodeURIComponent(id))
@@ -1207,7 +1217,7 @@
       });
     });
 
-    var addKnowledgeBtn = document.getElementById("CHAT-KN-ADD");
+    var addKnowledgeBtn = actionRoot.querySelector("#CHAT-KN-ADD");
     if (addKnowledgeBtn) {
       addKnowledgeBtn.onclick = async function () {
         var keyword = String((document.getElementById("CHAT-KN-KEYWORD") || {}).value || "").trim();
@@ -1228,7 +1238,7 @@
       };
     }
 
-    host.querySelectorAll("[data-kn-filter]").forEach(function (el) {
+    actionRoot.querySelectorAll("[data-kn-filter]").forEach(function (el) {
       el.addEventListener("click", function () {
         knowledgeCategoryFilter = String(el.getAttribute("data-kn-filter") || "Semua");
         window.localStorage.setItem("ajw_chat_knowledge_filter", knowledgeCategoryFilter);
@@ -1236,7 +1246,7 @@
       });
     });
 
-    host.querySelectorAll("[data-kn-del]").forEach(function (el) {
+    actionRoot.querySelectorAll("[data-kn-del]").forEach(function (el) {
       el.addEventListener("click", function () {
         var id = String(el.getAttribute("data-kn-del") || "");
         apiDelete("/api/chat/knowledge/" + encodeURIComponent(id))
@@ -1248,7 +1258,7 @@
       });
     });
 
-    host.querySelectorAll("[data-reply-group]").forEach(function (el) {
+    actionRoot.querySelectorAll("[data-reply-group]").forEach(function (el) {
       el.addEventListener("click", function () {
         replyGroupFilter = String(el.getAttribute("data-reply-group") || "Umum");
         window.localStorage.setItem("ajw_chat_reply_group", replyGroupFilter);
@@ -1256,7 +1266,7 @@
       });
     });
 
-    host.querySelectorAll("[data-replies-menu]").forEach(function (el) {
+    actionRoot.querySelectorAll("[data-replies-menu]").forEach(function (el) {
       el.addEventListener("click", function () {
         repliesManageMenu = String(el.getAttribute("data-replies-menu") || "quick");
         window.localStorage.setItem("ajw_chat_replies_menu", repliesManageMenu);
@@ -1264,7 +1274,7 @@
       });
     });
 
-    host.querySelectorAll("[data-predict-idx]").forEach(function (el) {
+    actionRoot.querySelectorAll("[data-predict-idx]").forEach(function (el) {
       el.addEventListener("click", function () {
         var idx = Number(el.getAttribute("data-predict-idx") || -1);
         var list = buildPredictions();
@@ -1278,7 +1288,7 @@
       });
     });
 
-    var predToggle = document.getElementById("CHAT-PREDICT-TOGGLE");
+    var predToggle = actionRoot.querySelector("#CHAT-PREDICT-TOGGLE");
     if (predToggle) {
       predToggle.addEventListener("change", function () {
         predictionEnabled = Boolean(predToggle.checked);
@@ -1287,7 +1297,7 @@
       });
     }
 
-    var refToggle = document.getElementById("CHAT-REF-TOGGLE");
+    var refToggle = actionRoot.querySelector("#CHAT-REF-TOGGLE");
     if (refToggle) {
       refToggle.addEventListener("change", function () {
         referenceEnabled = Boolean(refToggle.checked);
@@ -1296,7 +1306,7 @@
       });
     }
 
-    var aiSaveBtn = document.getElementById("CHAT-AI-SAVE-SETTINGS");
+    var aiSaveBtn = actionRoot.querySelector("#CHAT-AI-SAVE-SETTINGS");
     if (aiSaveBtn) {
       aiSaveBtn.onclick = function () {
         var aiEnabled = Boolean((document.getElementById("CHAT-AI-ENABLED") || {}).checked);
@@ -1343,6 +1353,8 @@
     renderAiDraftPanel();
     renderFilterState();
     renderSideTabs();
+    var compose = document.querySelector(".ajw-chat-compose");
+    if (compose) compose.style.display = activeSideTab === "replies" ? "none" : "";
   }
 
   function renderFilterState() {
