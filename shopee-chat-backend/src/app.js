@@ -75,6 +75,14 @@ function safeJsonParse(v, fallback) {
   }
 }
 
+function toIsoFromUnixMaybe(ts) {
+  const n = Number(ts || 0);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const ms = n > 9999999999 ? n : n * 1000;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? "" : d.toISOString();
+}
+
 function contentText(content) {
   if (!content) return "";
   if (typeof content.text === "string") return content.text;
@@ -731,6 +739,7 @@ app.post("/api/shopee/live-push", jsonFromRaw, async (req, res) => {
   const payload = req.body || {};
   const shopId = String(payload.shop_id || payload.shopid || "");
   const conversationId = String(payload.conversation_id || "");
+  const pushCode = String(payload.code || payload.push_code || payload.type || "");
 
   // Ack fast to minimize push failure/timeout in Shopee monitor.
   res.json({ ok: true });
@@ -738,14 +747,20 @@ app.post("/api/shopee/live-push", jsonFromRaw, async (req, res) => {
   Promise.resolve()
     .then(async () => {
       await insertWebhookEvent(
-        String(payload.code || payload.push_code || payload.type || ""),
+        pushCode,
         JSON.stringify(payload),
         nowIso()
       );
       if (shopId && conversationId) {
         await syncConversationMessages(shopId, conversationId);
       } else if (shopId) {
-      await syncConversations(shopId, { syncMessages: false, pageSize: 100, maxPages: 5 });
+        const deepSync = pushCode === "10" || pushCode === "webchat_push";
+        await syncConversations(shopId, {
+          syncMessages: deepSync,
+          hotLimit: deepSync ? 20 : 0,
+          pageSize: 100,
+          maxPages: 6
+        });
       }
     })
     .catch((err) => {
@@ -974,10 +989,7 @@ app.get("/api/chat/debug/shopee-raw", async (req, res) => {
       latest_message_type: String(c.latest_message_type || ""),
       latest_message_content: summarizeMessageType(c.latest_message_type, c.latest_message_content),
       last_message_timestamp: Number(c.last_message_timestamp || 0),
-      last_message_time_iso:
-        Number(c.last_message_timestamp || 0) > 0
-          ? new Date(Number(c.last_message_timestamp || 0) * 1000).toISOString()
-          : ""
+      last_message_time_iso: toIsoFromUnixMaybe(c.last_message_timestamp)
     }));
     res.json({
       ok: true,
