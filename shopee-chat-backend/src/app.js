@@ -165,6 +165,14 @@ app.get("/health", (_req, res) => {
   });
 });
 
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "ajw-shopee-chat-backend",
+    health: "/health"
+  });
+});
+
 app.get("/api/shopee/oauth/url", (req, res) => {
   try {
     const shopId = String(req.query.shop_id || "");

@@ -1,10 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const defaultPath = process.env.VERCEL ? "/tmp/shopee_chat.json" : "./data/shopee_chat.json";
+const isVercel = Boolean(process.env.VERCEL || process.env.VERCEL_URL);
+const defaultPath = isVercel ? "/tmp/shopee_chat.json" : "./data/shopee_chat.json";
 const dbPath = process.env.DB_PATH || defaultPath;
-const absDbPath = path.resolve(process.cwd(), dbPath);
-fs.mkdirSync(path.dirname(absDbPath), { recursive: true });
+const absDbPath = path.isAbsolute(dbPath) ? dbPath : path.resolve(process.cwd(), dbPath);
+let persistenceEnabled = true;
+
+try {
+  fs.mkdirSync(path.dirname(absDbPath), { recursive: true });
+} catch (err) {
+  persistenceEnabled = false;
+  console.error("[db] mkdir failed, fallback to memory-only mode:", err.message || err);
+}
 
 function defaultState() {
   return {
@@ -16,7 +24,7 @@ function defaultState() {
 }
 
 let state = defaultState();
-if (fs.existsSync(absDbPath)) {
+if (persistenceEnabled && fs.existsSync(absDbPath)) {
   try {
     const raw = fs.readFileSync(absDbPath, "utf8");
     const parsed = JSON.parse(raw || "{}");
@@ -32,7 +40,13 @@ if (fs.existsSync(absDbPath)) {
 }
 
 function persist() {
-  fs.writeFileSync(absDbPath, JSON.stringify(state, null, 2), "utf8");
+  if (!persistenceEnabled) return;
+  try {
+    fs.writeFileSync(absDbPath, JSON.stringify(state, null, 2), "utf8");
+  } catch (err) {
+    persistenceEnabled = false;
+    console.error("[db] write failed, fallback to memory-only mode:", err.message || err);
+  }
 }
 
 export function nowIso() {
@@ -40,7 +54,7 @@ export function nowIso() {
 }
 
 export function getDbPath() {
-  return absDbPath;
+  return persistenceEnabled ? absDbPath : "memory://volatile";
 }
 
 export function upsertToken(row) {
