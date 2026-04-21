@@ -1110,6 +1110,22 @@ app.get("/api/chat/messages", async (req, res) => {
   }
 });
 
+app.post("/api/chat/conversation/read", async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const conversationId = String(req.body.conversation_id || "").trim();
+    if (!shopId || !conversationId) throw new Error("shop_id dan conversation_id wajib");
+    await updateConversationStats(conversationId, {
+      shop_id: shopId,
+      unread_count: 0,
+      updated_at: nowIso()
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
 app.get("/api/chat/shops", async (_req, res) => {
   try {
     const rows = (await listTokens())

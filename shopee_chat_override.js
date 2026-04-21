@@ -20,11 +20,13 @@
   var knowledgeCache = [];
   var aiDraftsCache = [];
   var aiSettings = null;
+  var repliesManageMenu = window.localStorage.getItem("ajw_chat_replies_menu") || "quick";
   var replyGroupFilter = window.localStorage.getItem("ajw_chat_reply_group") || "Umum";
   var predictionEnabled = window.localStorage.getItem("ajw_chat_pred_toggle") !== "0";
   var referenceEnabled = window.localStorage.getItem("ajw_chat_ref_toggle") !== "0";
   var attachmentQueue = [];
   var productSearch = "";
+  var shopSearch = window.localStorage.getItem("ajw_chat_shop_search") || "";
   var emojiOpen = false;
   var pollInFlight = false;
   var lastRealtimeConvSig = "";
@@ -127,9 +129,20 @@
       ".ajw-ai-draft{margin-top:8px;padding:10px;border:1px solid var(--bd);border-radius:10px;background:rgba(16,20,28,.92)}" +
       ".ajw-ai-draft textarea{width:100%;min-height:90px;resize:vertical;margin-top:8px}" +
       ".ajw-two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}" +
+      ".ajw-reply-layout{display:grid;grid-template-columns:170px minmax(0,1fr);gap:10px}" +
+      ".ajw-reply-side{border:1px solid var(--bd);border-radius:12px;background:rgba(20,23,30,.92);padding:8px}" +
+      ".ajw-reply-side button{width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--tx2);padding:10px 10px;border-radius:10px;cursor:pointer;font-size:12px;font-weight:700}" +
+      ".ajw-reply-side button.on{background:rgba(59,130,246,.18);border-color:rgba(59,130,246,.45);color:#dbeafe}" +
+      ".ajw-reply-main{min-width:0}" +
+      ".ajw-shop-shell{display:grid;grid-template-columns:42px minmax(0,1fr);min-height:0;flex:1}" +
+      ".ajw-shop-icons{border-right:1px solid var(--bd);background:linear-gradient(180deg,#202531,#171b23);padding:8px 4px;display:flex;flex-direction:column;gap:6px;align-items:center}" +
+      ".ajw-shop-ico{width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--tx2)}" +
+      ".ajw-shop-panel{display:flex;flex-direction:column;min-height:0}" +
+      ".ajw-shop-headline{display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid var(--bd)}" +
+      ".ajw-shop-search{height:30px}" +
       ".ajw-chat-empty{padding:18px;color:var(--tx3);font-size:12px}" +
       "@media (max-width:1300px){.ajw-chat-shell{grid-template-columns:200px 300px minmax(0,1fr) 320px}}" +
-      "@media (max-width:980px){#V-chat{top:52px}.ajw-chat-toolbar{grid-template-columns:1fr 1fr auto;}.ajw-chat-shell{grid-template-columns:1fr;height:calc(100vh - 52px - 24px)}.ajw-chat-col{border-right:none;border-bottom:1px solid var(--bd)}.ajw-chat-col:last-child{border-bottom:none}.ajw-two-col{grid-template-columns:1fr}}";
+      "@media (max-width:980px){#V-chat{top:52px}.ajw-chat-toolbar{grid-template-columns:1fr 1fr auto;}.ajw-chat-shell{grid-template-columns:1fr;height:calc(100vh - 52px - 24px)}.ajw-chat-col{border-right:none;border-bottom:1px solid var(--bd)}.ajw-chat-col:last-child{border-bottom:none}.ajw-two-col{grid-template-columns:1fr}.ajw-reply-layout{grid-template-columns:1fr}}";
     document.head.appendChild(style);
   }
 
@@ -362,6 +375,10 @@
 
   async function openConversation(conversationId) {
     selectedConversationId = String(conversationId || "");
+    conversationsCache = (conversationsCache || []).map(function (r) {
+      if (String(r.conversation_id) !== String(selectedConversationId)) return r;
+      return { ...r, unread_count: 0 };
+    });
     messagesCache = [];
     ordersCache = [];
     renderHeaderState();
@@ -386,6 +403,10 @@
         return Promise.all([loadMessages(), loadOrders(true), loadConversations(), loadAiDrafts()]);
       })
       .then(function () {
+        apiPost("/api/chat/conversation/read", {
+          shop_id: selectedShopId(),
+          conversation_id: selectedConversationId
+        }).catch(function () {});
         renderHeaderState();
         renderConversations();
         renderMessages();
@@ -404,21 +425,48 @@
   function renderShops() {
     var host = document.getElementById("CHAT-SHOP-LIST");
     if (!host) return;
+    var unreadByShop = {};
+    conversationsCache.forEach(function (c) {
+      var sid = String(c.shop_id || currentShopId || "");
+      unreadByShop[sid] = (unreadByShop[sid] || 0) + (Number(c.unread_count || 0) > 0 ? 1 : 0);
+    });
+    var filtered = shopsCache.filter(function (s) {
+      if (!shopSearch) return true;
+      var sid = String(s.shop_id || "");
+      return sid.indexOf(shopSearch) >= 0;
+    });
     if (!shopsCache.length) {
       host.innerHTML = '<div class="ajw-chat-empty">Belum ada token toko. Klik OAuth sekali untuk hubungkan toko.</div>';
       return;
     }
-    host.innerHTML = shopsCache
+    host.innerHTML =
+      '<div class="ajw-shop-shell">' +
+      '<div class="ajw-shop-icons">' +
+      '<div class="ajw-shop-ico">💬</div>' +
+      '<div class="ajw-shop-ico">🧾</div>' +
+      '<div class="ajw-shop-ico">📦</div>' +
+      '<div class="ajw-shop-ico">🤖</div>' +
+      '<div class="ajw-shop-ico">⚙️</div>' +
+      "</div>" +
+      '<div class="ajw-shop-panel">' +
+      '<div class="ajw-shop-headline"><input id="CHAT-SHOP-SEARCH" class="fi ajw-shop-search" placeholder="Cari toko..." value="' + escSafe(shopSearch) + '"></div>' +
+      '<div class="ajw-chat-body">' +
+      filtered
       .map(function (shop) {
         var sid = String(shop.shop_id || "");
+        var unread = Number(unreadByShop[sid] || 0);
         return (
           '<div class="ajw-chat-shop ' + (sid === String(currentShopId || "") ? "on" : "") + '" data-shop-id="' + escSafe(sid) + '">' +
+          '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">' +
           '<div style="font-size:12px;font-weight:800;color:var(--tx)">Shop ' + escSafe(sid) + "</div>" +
-          '<div style="font-size:10px;color:var(--tx3);margin-top:4px">Token update: ' + escSafe(fmtTs(shop.updated_at)) + "</div>" +
+          (unread > 0 ? '<span class="ajw-chat-pill red">' + unread + "</span>" : "") +
+          "</div>" +
+          '<div style="font-size:10px;color:var(--tx3);margin-top:4px">Token: ' + escSafe(fmtTs(shop.updated_at)) + "</div>" +
           "</div>"
         );
       })
-      .join("");
+      .join("") +
+      "</div></div></div>";
 
     host.querySelectorAll("[data-shop-id]").forEach(function (el) {
       el.addEventListener("click", function () {
@@ -436,16 +484,43 @@
         });
       });
     });
+
+    var search = document.getElementById("CHAT-SHOP-SEARCH");
+    if (search) {
+      search.addEventListener("change", function () {
+        shopSearch = String(search.value || "").trim();
+        window.localStorage.setItem("ajw_chat_shop_search", shopSearch);
+        renderShops();
+      });
+    }
+  }
+
+  function getFilteredConversations() {
+    var rows = (conversationsCache || []).slice();
+    if (activeFilter === "unread") {
+      rows = rows.filter(function (r) {
+        return Number(r.unread_count || 0) > 0;
+      });
+    } else if (activeFilter === "unreplied") {
+      rows = rows.filter(function (r) {
+        return Number(r.has_unreplied || 0) > 0;
+      });
+    }
+    rows.sort(function (a, b) {
+      return Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0);
+    });
+    return rows;
   }
 
   function renderConversations() {
     var host = document.getElementById("CHAT-CONV-LIST");
     if (!host) return;
-    if (!conversationsCache.length) {
+    var rows = getFilteredConversations();
+    if (!rows.length) {
       host.innerHTML = '<div class="ajw-chat-empty">Belum ada percakapan untuk filter ini.</div>';
       return;
     }
-    host.innerHTML = conversationsCache
+    host.innerHTML = rows
       .map(function (row) {
         var unread = Number(row.unread_count || 0);
         var unreplied = Number(row.has_unreplied || 0) > 0;
@@ -839,46 +914,21 @@
       return normalizeReplyGroup(row.group_name) === replyGroupFilter;
     });
     var predictions = buildPredictions();
-    return (
+    var menuButtons =
+      '<div class="ajw-reply-side">' +
+      '<button class="' + (repliesManageMenu === "quick" ? "on" : "") + '" data-replies-menu="quick">Balasan Cepat</button>' +
+      '<button class="' + (repliesManageMenu === "knowledge" ? "on" : "") + '" data-replies-menu="knowledge">Pusat Informasi</button>' +
+      '<button class="' + (repliesManageMenu === "ai" ? "on" : "") + '" data-replies-menu="ai">Mode AI</button>' +
+      "</div>";
+
+    var mainQuick =
+      '<div class="ajw-reply-main">' +
       '<div class="ajw-reply-top">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
       '<button class="ajw-chip ' + (replyGroupFilter === "Umum" ? "on" : "") + '" data-reply-group="Umum">Umum</button>' +
       '<button class="ajw-chip ' + (replyGroupFilter === "Pribadi" ? "on" : "") + '" data-reply-group="Pribadi">Pribadi</button>' +
       "</div>" +
       '<button id="CHAT-QR-ADD" class="btnp" style="padding:8px 12px">Tambah</button>' +
-      "</div>" +
-      '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">' +
-      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-PREDICT-TOGGLE" ' + (predictionEnabled ? "checked" : "") + "> Teks Prediksi</label>" +
-      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-REF-TOGGLE" ' + (referenceEnabled ? "checked" : "") + "> Referensi Cepat</label>" +
-      "</div>" +
-      '<div class="ajw-chat-card" style="margin-bottom:10px">' +
-      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Mode AI Balas Otomatis (Review Dulu)</div>' +
-      '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
-      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-ENABLED" ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "checked" : "") + "> AI Aktif</label>" +
-      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-APPROVAL" ' + (!aiSettings || Number(aiSettings.require_approval || 0) ? "checked" : "") + "> Perlu Persetujuan Kirim</label>" +
-      '<select id="CHAT-AI-PROVIDER" class="fi" style="max-width:150px">' +
-      '<option value="smart"' + (aiSettings && aiSettings.provider === "smart" ? " selected" : "") + ">Smart</option>" +
-      '<option value="openai"' + (aiSettings && aiSettings.provider === "openai" ? " selected" : "") + ">OpenAI</option>" +
-      '<option value="claude"' + (aiSettings && aiSettings.provider === "claude" ? " selected" : "") + ">Claude</option>" +
-      "</select>" +
-      '<button id="CHAT-AI-SAVE-SETTINGS" class="btns">Simpan Mode AI</button>' +
-      "</div>" +
-      "</div>" +
-      '<div class="ajw-two-col">' +
-      '<div class="ajw-chat-card">' +
-      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Kolom Tambah Balasan Cepat</div>' +
-      '<input id="CHAT-QR-KEYWORD" class="fi" placeholder="Keyword pemicu (contoh: stok, kirim, refund)">' +
-      '<input id="CHAT-QR-TITLE" class="fi" placeholder="Judul template" style="margin-top:8px">' +
-      '<textarea id="CHAT-QR-CONTENT" class="fi" style="margin-top:8px;min-height:88px" placeholder="Template jawaban..."></textarea>' +
-      '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-QR-ADD-FORM" class="btnp">Simpan Template</button></div>' +
-      "</div>" +
-      '<div class="ajw-chat-card">' +
-      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Pusat Informasi (Keyword + Jawaban)</div>' +
-      '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan">' +
-      '<input id="CHAT-KN-GROUP" class="fi" placeholder="Kategori (contoh: Pengiriman)" style="margin-top:8px">' +
-      '<textarea id="CHAT-KN-TEMPLATE" class="fi" style="margin-top:8px;min-height:88px" placeholder="Jawaban acuan untuk AI..."></textarea>' +
-      '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-KN-ADD" class="btnp">Simpan Referensi</button></div>' +
-      "</div>" +
       "</div>" +
       (predictions.length
         ? ('<div class="ajw-predict"><h4>Teks Prediksi</h4><div style="display:flex;gap:6px;flex-wrap:wrap">' +
@@ -906,10 +956,21 @@
             })
             .join("")
         : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk grup ini.</div>') +
+      "</div>";
+
+    var mainKnowledge =
+      '<div class="ajw-reply-main">' +
+      '<div class="ajw-chat-card">' +
+      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Referensi Kata Kunci</div>' +
+      '<input id="CHAT-KN-KEYWORD" class="fi" placeholder="Keyword pertanyaan">' +
+      '<input id="CHAT-KN-GROUP" class="fi" placeholder="Kategori (contoh: Pengiriman)" style="margin-top:8px">' +
+      '<textarea id="CHAT-KN-TEMPLATE" class="fi" style="margin-top:8px;min-height:100px" placeholder="Jawaban acuan untuk AI..."></textarea>' +
+      '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-KN-ADD" class="btnp">Simpan Referensi</button></div>' +
+      "</div>" +
       (knowledgeCache.length
-        ? ('<div class="ajw-predict"><h4>Pusat Informasi Tersimpan</h4>' +
+        ? ('<div class="ajw-predict"><h4>Daftar Pusat Informasi</h4>' +
           knowledgeCache
-            .slice(0, 30)
+            .slice(0, 60)
             .map(function (k) {
               return (
                 '<div class="ajw-chat-card" style="margin-bottom:8px">' +
@@ -924,10 +985,37 @@
             })
             .join("") +
           "</div>")
-        : "") +
-      (referenceEnabled
-        ? '<div class="ajw-predict"><h4>Referensi Cepat</h4><div style="font-size:12px;color:var(--tx2)">Klik tab <b>Pesanan</b> untuk ambil nomor pesanan/resi, dan klik tab <b>Rincian Produk</b> untuk kirim link produk + SKU ke chat.</div></div>'
-        : "")
+        : '<div class="ajw-chat-empty">Belum ada data pusat informasi.</div>') +
+      "</div>";
+
+    var mainAi =
+      '<div class="ajw-reply-main">' +
+      '<div class="ajw-chat-card">' +
+      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Mode AI Balas Otomatis</div>' +
+      '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">' +
+      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-ENABLED" ' + (aiSettings && Number(aiSettings.ai_enabled || 0) ? "checked" : "") + "> AI Aktif</label>" +
+      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-AI-APPROVAL" ' + (!aiSettings || Number(aiSettings.require_approval || 0) ? "checked" : "") + "> Perlu Persetujuan Kirim</label>" +
+      '<select id="CHAT-AI-PROVIDER" class="fi" style="max-width:150px">' +
+      '<option value="smart"' + (aiSettings && aiSettings.provider === "smart" ? " selected" : "") + ">Smart</option>" +
+      '<option value="openai"' + (aiSettings && aiSettings.provider === "openai" ? " selected" : "") + ">OpenAI</option>" +
+      '<option value="claude"' + (aiSettings && aiSettings.provider === "claude" ? " selected" : "") + ">Claude</option>" +
+      "</select>" +
+      '<button id="CHAT-AI-SAVE-SETTINGS" class="btns">Simpan Mode AI</button>' +
+      "</div>" +
+      '<div style="font-size:11px;color:var(--tx3);margin-top:8px">Draft AI bisa direview dulu di bawah kolom kirim chat sebelum dikirim ke pembeli.</div>' +
+      "</div>" +
+      '<div class="ajw-chat-card">' +
+      '<div style="font-size:12px;font-weight:800;margin-bottom:8px">Tambah Balasan Cepat + Keyword Sekaligus</div>' +
+      '<input id="CHAT-QR-KEYWORD" class="fi" placeholder="Keyword pemicu (stok, kirim, refund)">' +
+      '<input id="CHAT-QR-TITLE" class="fi" placeholder="Judul template" style="margin-top:8px">' +
+      '<textarea id="CHAT-QR-CONTENT" class="fi" style="margin-top:8px;min-height:100px" placeholder="Template jawaban..."></textarea>' +
+      '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button id="CHAT-QR-ADD-FORM" class="btnp">Simpan Template</button></div>' +
+      "</div>" +
+      "</div>";
+
+    var main = repliesManageMenu === "knowledge" ? mainKnowledge : repliesManageMenu === "ai" ? mainAi : mainQuick;
+    return (
+      '<div class="ajw-reply-layout">' + menuButtons + main + "</div>"
     );
   }
 
@@ -1093,6 +1181,14 @@
       el.addEventListener("click", function () {
         replyGroupFilter = String(el.getAttribute("data-reply-group") || "Umum");
         window.localStorage.setItem("ajw_chat_reply_group", replyGroupFilter);
+        renderSidePanel();
+      });
+    });
+
+    host.querySelectorAll("[data-replies-menu]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        repliesManageMenu = String(el.getAttribute("data-replies-menu") || "quick");
+        window.localStorage.setItem("ajw_chat_replies_menu", repliesManageMenu);
         renderSidePanel();
       });
     });
