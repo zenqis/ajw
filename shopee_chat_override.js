@@ -17,6 +17,9 @@
   var ordersCache = [];
   var productsCache = [];
   var quickRepliesCache = [];
+  var replyGroupFilter = window.localStorage.getItem("ajw_chat_reply_group") || "Umum";
+  var predictionEnabled = window.localStorage.getItem("ajw_chat_pred_toggle") !== "0";
+  var referenceEnabled = window.localStorage.getItem("ajw_chat_ref_toggle") !== "0";
   var attachmentQueue = [];
   var productSearch = "";
   var emojiOpen = false;
@@ -35,6 +38,14 @@
   function toast(msg, kind) {
     if (typeof window.toast === "function") window.toast(msg, kind || "info");
     else alert(msg);
+  }
+
+  function safeJson(value, fallback) {
+    try {
+      return JSON.parse(value || "");
+    } catch (_e) {
+      return fallback;
+    }
   }
 
   function fmtTs(ts) {
@@ -57,7 +68,7 @@
     style.id = "AJW-CHAT-STYLES";
     style.textContent =
       "#V-chat{width:100%;max-width:none!important;position:fixed;left:0;right:0;top:52px;bottom:0;z-index:40;background:radial-gradient(1200px 500px at 20% -20%,rgba(245,158,11,.08),transparent),linear-gradient(180deg,#111317,#0b0d10)}" +
-      ".ajw-chat-shell{display:grid;grid-template-columns:220px 340px minmax(0,1fr) 360px;gap:0;height:calc(100vh - 52px - 58px);border:1px solid var(--bd);border-radius:0;background:linear-gradient(180deg,var(--bg2),var(--bg4));overflow:hidden}" +
+      ".ajw-chat-shell{display:grid;grid-template-columns:220px 340px minmax(0,1fr) 360px;gap:0;height:calc(100vh - 52px - 24px);border:1px solid var(--bd);border-radius:0;background:linear-gradient(180deg,var(--bg2),var(--bg4));overflow:hidden}" +
       ".ajw-chat-col{min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--bd);background:linear-gradient(180deg,rgba(24,27,33,.9),rgba(16,18,22,.9))}" +
       ".ajw-chat-col:last-child{border-right:none}" +
       ".ajw-chat-main{display:grid;grid-template-rows:auto minmax(0,1fr) auto}" +
@@ -75,10 +86,14 @@
       ".ajw-chat-filter{border:1px solid var(--bd);background:var(--bg3);color:var(--tx2);border-radius:999px;padding:5px 10px;font-size:10px;font-weight:700;cursor:pointer}" +
       ".ajw-chat-filter.on{border-color:#f59e0b;background:rgba(245,158,11,.16);color:#b45309}" +
       ".ajw-chat-thread{flex:1;min-height:0;overflow:auto;padding:16px;background:radial-gradient(800px 280px at 80% 0,rgba(56,189,248,.07),transparent),linear-gradient(180deg,#141820,#0f1217)}" +
-      ".ajw-chat-bubble-row{display:flex;margin-bottom:10px}" +
+      ".ajw-chat-bubble-row{display:flex;margin-bottom:8px}" +
       ".ajw-chat-bubble-row.mine{justify-content:flex-end}" +
-      ".ajw-chat-bubble{max-width:76%;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(29,33,41,.88);color:var(--tx)}" +
-      ".ajw-chat-bubble.mine{background:linear-gradient(180deg,rgba(37,99,235,.36),rgba(30,64,175,.28));border-color:rgba(147,197,253,.35)}" +
+      ".ajw-chat-bubble{max-width:72%;padding:10px 12px;border-radius:14px;background:rgba(29,33,41,.9);color:var(--tx)}" +
+      ".ajw-chat-bubble.them{border:1px solid rgba(255,255,255,.08);border-bottom-left-radius:6px}" +
+      ".ajw-chat-bubble.mine{background:linear-gradient(180deg,rgba(37,99,235,.36),rgba(30,64,175,.26));border:1px solid rgba(147,197,253,.35);border-bottom-right-radius:6px}" +
+      ".ajw-chat-bubble-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}" +
+      ".ajw-chat-bubble-name{font-size:10px;font-weight:800;letter-spacing:.2px;opacity:.9}" +
+      ".ajw-chat-bubble-time{font-size:10px;color:var(--tx3);margin-top:6px}" +
       ".ajw-chat-compose{border-top:1px solid var(--bd);padding:10px 12px;background:linear-gradient(180deg,rgba(22,25,31,.95),rgba(15,18,23,.95))}" +
       ".ajw-chat-compose-tools{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}" +
       ".ajw-chat-iconbtn{width:34px;height:34px;border-radius:10px;border:1px solid var(--bd);background:var(--bg3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px}" +
@@ -93,9 +108,22 @@
       ".ajw-chat-product img{width:58px;height:58px;border-radius:10px;object-fit:cover;border:1px solid var(--bd);background:#13161b}" +
       ".ajw-chat-emoji{position:absolute;left:12px;bottom:120px;z-index:50;padding:10px;border:1px solid var(--bd);background:var(--bg2);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.16);display:grid;grid-template-columns:repeat(6,1fr);gap:6px;width:240px}" +
       ".ajw-chat-emoji button{border:none;background:var(--bg3);border-radius:8px;padding:8px;cursor:pointer;font-size:16px}" +
+      ".ajw-kv{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;margin-top:10px}" +
+      ".ajw-kv div{font-size:12px}" +
+      ".ajw-kv .k{color:var(--tx3)}" +
+      ".ajw-kv .v{color:var(--tx2);font-weight:700;word-break:break-word}" +
+      ".ajw-order-item{display:grid;grid-template-columns:62px minmax(0,1fr);gap:10px;padding:10px 0}" +
+      ".ajw-order-item img{width:62px;height:62px;border-radius:10px;object-fit:cover;border:1px solid var(--bd);background:#12151b}" +
+      ".ajw-sep{height:1px;background:rgba(255,255,255,.06);margin:8px 0}" +
+      ".ajw-reply-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}" +
+      ".ajw-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx2)}" +
+      ".ajw-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--bd);border-radius:999px;padding:5px 9px;font-size:11px;cursor:pointer;background:rgba(20,23,30,.9);color:var(--tx2)}" +
+      ".ajw-chip.on{border-color:#3b82f6;background:rgba(59,130,246,.18);color:#dbeafe}" +
+      ".ajw-predict{margin-top:10px;padding:10px;border:1px solid var(--bd);border-radius:10px;background:rgba(17,20,26,.9)}" +
+      ".ajw-predict h4{margin:0 0 8px 0;font-size:12px}" +
       ".ajw-chat-empty{padding:18px;color:var(--tx3);font-size:12px}" +
       "@media (max-width:1300px){.ajw-chat-shell{grid-template-columns:200px 300px minmax(0,1fr) 320px}}" +
-      "@media (max-width:980px){#V-chat{top:52px}.ajw-chat-toolbar{grid-template-columns:1fr 1fr auto;}.ajw-chat-shell{grid-template-columns:1fr;height:calc(100vh - 52px - 58px)}.ajw-chat-col{border-right:none;border-bottom:1px solid var(--bd)}.ajw-chat-col:last-child{border-bottom:none}}";
+      "@media (max-width:980px){#V-chat{top:52px}.ajw-chat-toolbar{grid-template-columns:1fr 1fr auto;}.ajw-chat-shell{grid-template-columns:1fr;height:calc(100vh - 52px - 24px)}.ajw-chat-col{border-right:none;border-bottom:1px solid var(--bd)}.ajw-chat-col:last-child{border-bottom:none}}";
     document.head.appendChild(style);
   }
 
@@ -403,6 +431,18 @@
     });
   }
 
+  function isSellerMessage(row, conv) {
+    var fromId = String((row && row.from_id) || "");
+    var toId = String((row && row.to_id) || "");
+    var shopId = String(currentShopId || "");
+    var buyerId = String((conv && conv.to_id) || "");
+    if (fromId && shopId && fromId === shopId) return true;
+    if (fromId && buyerId && fromId === buyerId) return false;
+    if (toId && buyerId && toId === buyerId) return true;
+    if (toId && shopId && toId === shopId) return false;
+    return false;
+  }
+
   function renderMessages() {
     var host = document.getElementById("CHAT-MESSAGES");
     if (!host) return;
@@ -414,14 +454,17 @@
       host.innerHTML = '<div class="ajw-chat-empty">Belum ada pesan tersimpan.</div>';
       return;
     }
+    var conv = currentConversation();
     host.innerHTML = messagesCache
       .map(function (row) {
-        var mine = String(row.from_id || "") === String(currentShopId || "");
+        var mine = isSellerMessage(row, conv);
+        var senderName = mine ? "Anda" : (conv && (conv.to_name || conv.to_id)) || "Pembeli";
         return (
           '<div class="ajw-chat-bubble-row ' + (mine ? "mine" : "") + '">' +
-          '<div class="ajw-chat-bubble ' + (mine ? "mine" : "") + '">' +
+          '<div class="ajw-chat-bubble ' + (mine ? "mine" : "them") + '">' +
+          '<div class="ajw-chat-bubble-head"><span class="ajw-chat-bubble-name">' + escSafe(senderName) + "</span></div>" +
           '<div style="font-size:12px;line-height:1.55;white-space:pre-wrap;word-break:break-word">' + escSafe(row.content_text || "(non-text)") + "</div>" +
-          '<div style="font-size:10px;color:var(--tx3);margin-top:6px">' + escSafe(fmtTs(row.created_timestamp)) + "</div>" +
+          '<div class="ajw-chat-bubble-time">' + escSafe(fmtTs(row.created_timestamp)) + "</div>" +
           "</div></div>"
         );
       })
@@ -466,31 +509,66 @@
     }
     return ordersCache
       .map(function (order) {
-        var items = [];
-        try {
-          items = JSON.parse(order.items_json || "[]");
-        } catch (_e) {}
+        var raw = safeJson(order.raw_json, {});
+        var items = safeJson(order.items_json, []);
+        var packages = Array.isArray(raw.package_list) ? raw.package_list : [];
+        var pkg = packages[0] || {};
+        var tracking = pkg.tracking_number || pkg.package_number || pkg.logistics_tracking_no || raw.tracking_no || "-";
+        var courier = pkg.shipping_carrier || pkg.logistics_channel || raw.shipping_carrier || raw.logistics_channel || "-";
+        var logisticsStatus = pkg.logistics_status || raw.logistics_status || raw.order_status || order.order_status || "-";
+        var paymentMethod = raw.payment_method || raw.payment_method_name || "-";
+        var totalBuyer = Number(raw.total_amount || order.total_amount || 0);
+        var shippingFee = Number(raw.actual_shipping_fee || raw.estimated_shipping_fee || 0);
+        var updateShipTs = Number(pkg.update_time || raw.shipping_confirm_time || raw.pickup_done_time || 0);
         return (
           '<div class="ajw-chat-card">' +
           '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">' +
-          '<div><div style="font-size:12px;font-weight:800;color:var(--tx)">' + escSafe(order.order_sn || "-") + "</div>" +
-          '<div style="font-size:10px;color:var(--tx3);margin-top:4px">' + escSafe(fmtTs(order.create_time)) + "</div></div>" +
+          '<div><div style="font-size:12px;color:var(--tx3)">No Pesanan</div><div style="font-size:13px;font-weight:800;color:var(--tx);margin-top:2px">' + escSafe(order.order_sn || "-") + "</div>" +
+          '<div style="font-size:11px;color:var(--tx3);margin-top:6px">' + escSafe(fmtTs(order.create_time)) + "</div></div>" +
           '<span class="ajw-chat-pill gold">' + escSafe(order.order_status || "-") + "</span>" +
           "</div>" +
-          '<div style="font-size:12px;color:var(--tx2);margin-top:10px">Total: <b>' + escSafe(money(order.total_amount)) + "</b></div>" +
-          '<div style="margin-top:10px">' +
+          '<div class="ajw-sep"></div>' +
+          '<div style="font-size:12px;font-weight:800;color:var(--tx);margin-bottom:6px">Rincian Produk</div>' +
           items
             .slice(0, 8)
             .map(function (item) {
+              var image = (item.image_info && item.image_info.image_url) || item.image_url || item.item_image || "";
+              var title = item.item_name || item.model_name || "-";
+              var sku = item.model_sku || item.item_sku || "-";
+              var qty = Number(item.model_quantity_purchased || item.quantity_purchased || 1);
+              var variation = item.model_name || item.variation || "-";
+              var unitPrice = Number(item.model_original_price || item.model_discounted_price || item.item_price || 0);
               return (
-                '<div style="padding:8px 0;border-top:1px solid var(--bd)">' +
-                '<div style="font-size:12px;font-weight:700;color:var(--tx)">' + escSafe(item.item_name || item.model_name || "-") + "</div>" +
-                '<div style="font-size:10px;color:var(--tx3);margin-top:4px">SKU: ' + escSafe(item.model_sku || item.item_sku || "-") + " • x" + escSafe(item.model_quantity_purchased || item.quantity_purchased || 1) + "</div>" +
+                '<div class="ajw-order-item">' +
+                (image
+                  ? '<img src="' + escSafe(image) + '" alt="' + escSafe(title) + '">'
+                  : '<div style="width:62px;height:62px;border-radius:10px;border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;color:var(--tx3);font-size:10px">No Img</div>') +
+                '<div>' +
+                '<div style="font-size:12px;font-weight:800;color:var(--tx);line-height:1.35">' + escSafe(title) + "</div>" +
+                '<div style="font-size:11px;color:var(--tx2);margin-top:4px">Variasi: ' + escSafe(variation) + "</div>" +
+                '<div style="font-size:11px;color:var(--tx3);margin-top:3px">SKU: ' + escSafe(sku) + " • x" + escSafe(qty) + "</div>" +
+                '<div style="font-size:12px;color:#f8fafc;margin-top:4px;font-weight:700">' + escSafe(money(unitPrice)) + "</div>" +
+                "</div>" +
                 "</div>"
               );
             })
             .join("") +
-          "</div></div>"
+          '<div class="ajw-sep"></div>' +
+          '<div style="font-size:12px;font-weight:800;color:var(--tx);margin-bottom:4px">Rincian Pembelian</div>' +
+          '<div class="ajw-kv">' +
+          '<div class="k">Jumlah pembayaran pembeli</div><div class="v">' + escSafe(money(totalBuyer)) + "</div>" +
+          '<div class="k">Metode Pembayaran</div><div class="v">' + escSafe(paymentMethod) + "</div>" +
+          '<div class="k">Biaya Pengiriman</div><div class="v">' + escSafe(money(shippingFee)) + "</div>" +
+          "</div>" +
+          '<div class="ajw-sep"></div>' +
+          '<div style="font-size:12px;font-weight:800;color:var(--tx);margin-bottom:4px">Informasi Jasa Kirim</div>' +
+          '<div class="ajw-kv">' +
+          '<div class="k">Jasa Kirim</div><div class="v">' + escSafe(courier) + "</div>" +
+          '<div class="k">Nomor Resi</div><div class="v">' + escSafe(tracking) + "</div>" +
+          '<div class="k">Status Logistik</div><div class="v">' + escSafe(logisticsStatus) + "</div>" +
+          '<div class="k">Waktu Update</div><div class="v">' + escSafe(fmtTs(updateShipTs)) + "</div>" +
+          "</div>" +
+          "</div>"
         );
       })
       .join("");
@@ -552,17 +630,34 @@
       (productsCache.length
         ? productsCache
             .map(function (row) {
+              var raw = safeJson(row.raw_json, {});
+              var variants = Array.isArray(raw.base_info && raw.base_info.model) ? raw.base_info.model : [];
               return (
                 '<div class="ajw-chat-card">' +
                 '<div class="ajw-chat-product">' +
                 '<img src="' + escSafe(row.image_url || "") + '" alt="' + escSafe(row.item_name || "produk") + '">' +
                 '<div style="min-width:0">' +
                 '<div style="font-size:12px;font-weight:800;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escSafe(row.item_name || "-") + "</div>" +
-                '<div style="font-size:11px;color:var(--tx2);margin-top:4px">SKU: ' + escSafe(row.sku || "-") + "</div>" +
-                '<div style="font-size:11px;color:var(--tx2);margin-top:4px">Harga: ' + escSafe(parseProductPrice(row)) + " • Stok: " + escSafe(row.stock || 0) + " • Terjual: x" + escSafe(parseProductSold(row)) + "</div>" +
+                '<div style="font-size:13px;color:#f8fafc;margin-top:4px;font-weight:700">Harga: ' + escSafe(parseProductPrice(row)) + "</div>" +
+                '<div style="font-size:11px;color:var(--tx2);margin-top:3px">SKU: ' + escSafe(row.sku || "-") + "</div>" +
+                '<div style="font-size:11px;color:var(--tx3);margin-top:3px">Stok: ' + escSafe(row.stock || 0) + " • Terjual: x" + escSafe(parseProductSold(row)) + "</div>" +
                 "</div>" +
                 '<button class="btnp" data-send-product="' + escSafe(row.item_id || "") + '" style="padding:8px 12px">Kirim</button>' +
-                "</div></div>"
+                "</div>" +
+                (variants.length
+                  ? ('<details style="margin-top:10px"><summary style="cursor:pointer;font-size:11px;color:var(--tx2)">Lihat variasi SKU</summary>' +
+                    '<div style="margin-top:8px;border:1px solid var(--bd);border-radius:10px;overflow:hidden">' +
+                    '<div style="display:grid;grid-template-columns:1.4fr 1fr .7fr;gap:8px;padding:8px 10px;background:rgba(255,255,255,.03);font-size:11px;color:var(--tx3)"><div>SKU</div><div>Variasi</div><div>Stok</div></div>' +
+                    variants
+                      .slice(0, 12)
+                      .map(function (v) {
+                        var stock = Number(v.normal_stock || v.stock || v.current_stock || 0);
+                        return '<div style="display:grid;grid-template-columns:1.4fr 1fr .7fr;gap:8px;padding:8px 10px;font-size:11px"><div style="color:var(--tx2)">' + escSafe(v.model_sku || "-") + '</div><div style="color:var(--tx2)">' + escSafe(v.model_name || "-") + '</div><div style="color:var(--tx2)">x' + escSafe(stock) + "</div></div>";
+                      })
+                      .join("") +
+                    "</div></details>")
+                  : "") +
+                "</div>"
               );
             })
             .join("")
@@ -570,20 +665,84 @@
     );
   }
 
+  function normalizeReplyGroup(name) {
+    var n = String(name || "").trim().toLowerCase();
+    if (n === "pribadi" || n === "private" || n === "personal") return "Pribadi";
+    return "Umum";
+  }
+
+  function buildPredictions() {
+    if (!predictionEnabled) return [];
+    var conv = currentConversation();
+    if (!conv) return [];
+    var incoming = messagesCache
+      .slice()
+      .reverse()
+      .find(function (row) {
+        return !isSellerMessage(row, conv);
+      });
+    var seed = String((incoming && incoming.content_text) || "").toLowerCase();
+    if (!seed) return [];
+    var pool = quickRepliesCache
+      .filter(function (r) {
+        return normalizeReplyGroup(r.group_name) === replyGroupFilter;
+      })
+      .map(function (r) {
+        return String(r.content || "").trim();
+      })
+      .filter(Boolean);
+    if (!pool.length) return [];
+    var scored = pool
+      .map(function (txt) {
+        var t = txt.toLowerCase();
+        var score = 0;
+        if (seed.indexOf("stok") >= 0 && (t.indexOf("stok") >= 0 || t.indexOf("ready") >= 0)) score += 2;
+        if (seed.indexOf("kirim") >= 0 && (t.indexOf("kirim") >= 0 || t.indexOf("pengiriman") >= 0)) score += 2;
+        if (seed.indexOf("harga") >= 0 && t.indexOf("harga") >= 0) score += 2;
+        if (seed.indexOf("kapan") >= 0 && t.indexOf("jam") >= 0) score += 1;
+        if (t.indexOf(seed.slice(0, 20)) >= 0) score += 1;
+        return { txt: txt, score: score };
+      })
+      .sort(function (a, b) {
+        return b.score - a.score || b.txt.length - a.txt.length;
+      });
+    return scored.slice(0, 5).map(function (x) { return x.txt; });
+  }
+
   function renderRepliesTab() {
+    var grouped = quickRepliesCache.filter(function (row) {
+      return normalizeReplyGroup(row.group_name) === replyGroupFilter;
+    });
+    var predictions = buildPredictions();
     return (
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px">' +
-      '<div style="font-size:12px;font-weight:800;color:var(--tx)">Balasan Cepat</div>' +
+      '<div class="ajw-reply-top">' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<button class="ajw-chip ' + (replyGroupFilter === "Umum" ? "on" : "") + '" data-reply-group="Umum">Umum</button>' +
+      '<button class="ajw-chip ' + (replyGroupFilter === "Pribadi" ? "on" : "") + '" data-reply-group="Pribadi">Pribadi</button>' +
+      "</div>" +
       '<button id="CHAT-QR-ADD" class="btnp" style="padding:8px 12px">Tambah</button>' +
       "</div>" +
-      (quickRepliesCache.length
-        ? quickRepliesCache
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-PREDICT-TOGGLE" ' + (predictionEnabled ? "checked" : "") + "> Teks Prediksi</label>" +
+      '<label class="ajw-toggle"><input type="checkbox" id="CHAT-REF-TOGGLE" ' + (referenceEnabled ? "checked" : "") + "> Referensi Cepat</label>" +
+      "</div>" +
+      (predictions.length
+        ? ('<div class="ajw-predict"><h4>Teks Prediksi</h4><div style="display:flex;gap:6px;flex-wrap:wrap">' +
+          predictions
+            .map(function (txt, idx) {
+              return '<button class="ajw-chip" data-predict-idx="' + idx + '">' + escSafe(txt.slice(0, 52)) + (txt.length > 52 ? "..." : "") + "</button>";
+            })
+            .join("") +
+          "</div></div>")
+        : "") +
+      (grouped.length
+        ? grouped
             .map(function (row) {
               return (
                 '<div class="ajw-chat-card">' +
                 '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">' +
                 '<div style="min-width:0"><div style="font-size:12px;font-weight:800;color:var(--tx)">' + escSafe(row.title || row.group_name || "Balasan") + "</div>" +
-                '<div style="font-size:10px;color:var(--tx3);margin-top:4px">' + escSafe(row.group_name || "Umum") + "</div></div>" +
+                '<div style="font-size:10px;color:var(--tx3);margin-top:4px">' + escSafe(normalizeReplyGroup(row.group_name)) + "</div></div>" +
                 '<button class="btns" data-qr-del="' + escSafe(row.id) + '" style="padding:5px 8px;font-size:10px">Hapus</button>' +
                 "</div>" +
                 '<div style="font-size:12px;color:var(--tx2);margin-top:10px;white-space:pre-wrap;line-height:1.55">' + escSafe(row.content || "") + "</div>" +
@@ -592,7 +751,10 @@
               );
             })
             .join("")
-        : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk toko ini.</div>')
+        : '<div class="ajw-chat-empty">Belum ada balasan cepat untuk grup ini.</div>') +
+      (referenceEnabled
+        ? '<div class="ajw-predict"><h4>Referensi Cepat</h4><div style="font-size:12px;color:var(--tx2)">Klik tab <b>Pesanan</b> untuk ambil nomor pesanan/resi, dan klik tab <b>Rincian Produk</b> untuk kirim link produk + SKU ke chat.</div></div>'
+        : "")
     );
   }
 
@@ -650,11 +812,13 @@
         if (title == null) return;
         var content = prompt("Isi balasan cepat:");
         if (!String(content || "").trim()) return;
+        var typedGroup = prompt("Grup balasan? Isi: Umum / Pribadi", replyGroupFilter);
+        var groupName = normalizeReplyGroup(typedGroup || replyGroupFilter);
         await apiPost("/api/chat/quick-replies", {
           shop_id: currentShopId,
           title: String(title || "").trim() || String(content || "").trim().slice(0, 30),
           content: String(content || "").trim(),
-          group_name: "Umum",
+          group_name: groupName,
           position: quickRepliesCache.length + 1
         });
         await loadQuickReplies();
@@ -686,6 +850,46 @@
           });
       });
     });
+
+    host.querySelectorAll("[data-reply-group]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        replyGroupFilter = String(el.getAttribute("data-reply-group") || "Umum");
+        window.localStorage.setItem("ajw_chat_reply_group", replyGroupFilter);
+        renderSidePanel();
+      });
+    });
+
+    host.querySelectorAll("[data-predict-idx]").forEach(function (el) {
+      el.addEventListener("click", function () {
+        var idx = Number(el.getAttribute("data-predict-idx") || -1);
+        var list = buildPredictions();
+        var txt = idx >= 0 && idx < list.length ? String(list[idx] || "") : "";
+        if (!txt) return;
+        var ta = document.getElementById("CHAT-REPLY-TEXT");
+        if (ta) {
+          ta.value = txt;
+          ta.focus();
+        }
+      });
+    });
+
+    var predToggle = document.getElementById("CHAT-PREDICT-TOGGLE");
+    if (predToggle) {
+      predToggle.addEventListener("change", function () {
+        predictionEnabled = Boolean(predToggle.checked);
+        window.localStorage.setItem("ajw_chat_pred_toggle", predictionEnabled ? "1" : "0");
+        renderSidePanel();
+      });
+    }
+
+    var refToggle = document.getElementById("CHAT-REF-TOGGLE");
+    if (refToggle) {
+      refToggle.addEventListener("change", function () {
+        referenceEnabled = Boolean(refToggle.checked);
+        window.localStorage.setItem("ajw_chat_ref_toggle", referenceEnabled ? "1" : "0");
+        renderSidePanel();
+      });
+    }
   }
 
   function renderHeaderState() {
