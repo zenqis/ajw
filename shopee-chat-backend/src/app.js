@@ -18,10 +18,12 @@ import {
   listProductsByShop,
   listQuickReplies,
   listAiDrafts,
+  listAiLearningSamples,
   listAiKnowledge,
   listTokens,
   nowIso,
   upsertAiDraft,
+  upsertAiLearningSample,
   updateAiDraft,
   upsertAiKnowledge,
   upsertAiSetting,
@@ -716,6 +718,63 @@ function pickKnowledgeByText(text, rows, limit = 6) {
   return scored.slice(0, limit);
 }
 
+function pickLearningByText(text, rows, limit = 4) {
+  const raw = String(text || "").toLowerCase();
+  const scored = (rows || [])
+    .map((r) => {
+      const customerText = String(r.customer_text || "").toLowerCase();
+      const notes = String(r.notes || "").toLowerCase();
+      let score = Number(r.score || 0) / 10;
+      const words = raw.split(/[^\p{L}\p{N}]+/u).filter((w) => w && w.length >= 3);
+      for (const w of words) {
+        if (customerText.includes(w)) score += 2;
+        else if (notes.includes(w)) score += 1;
+      }
+      return {
+        id: String(r.id || ""),
+        customer_text: String(r.customer_text || ""),
+        seller_text: String(r.seller_text || ""),
+        source: String(r.source || "manual_reply"),
+        score
+      };
+    })
+    .filter((r) => r.seller_text && r.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit);
+}
+
+function summarizeAiEffectiveness(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const scored = list.filter((r) => Number(r.score || 0) > 0);
+  const average = scored.length
+    ? scored.reduce((sum, r) => sum + Number(r.score || 0), 0) / scored.length
+    : 0;
+  return {
+    total_learning: list.length,
+    scored_count: scored.length,
+    avg_score: Number(average.toFixed(2)),
+    label: average >= 4.2 ? "sangat_baik" : average >= 3.4 ? "baik" : average >= 2.5 ? "cukup" : "perlu_belajar"
+  };
+}
+
+async function safeListAiLearning(params) {
+  try {
+    return await listAiLearningSamples(params);
+  } catch (err) {
+    console.error("ai learning list warning:", err.message || err);
+    return [];
+  }
+}
+
+async function safeUpsertAiLearning(row) {
+  try {
+    return await upsertAiLearningSample(row);
+  } catch (err) {
+    console.error("ai learning upsert warning:", err.message || err);
+    return null;
+  }
+}
+
 async function requestOpenAiDraft({ incomingText, historyRows, knowledgeRows, preset }) {
   const prompt = [
     "Kamu CS marketplace Indonesia.",
@@ -804,6 +863,7 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
     }));
   const quickReplies = await listQuickReplies({ shopId, limit: 120 });
   const knowledge = await listAiKnowledge({ shopId, limit: 240 });
+  const learning = await safeListAiLearning({ shopId, limit: 240 });
   const recentOrders = await listOrdersByConversation({ shopId, conversationId, limit: 8 });
   const searchTerm = String(incomingText || "")
     .split(/\s+/)
@@ -823,6 +883,7 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
     }))
   ];
   const selectedKnowledge = pickKnowledgeByText(incomingText, mergedKnowledge, 8);
+  const selectedLearning = pickLearningByText(incomingText, learning, 5);
   let text = "";
   let provider = String(settings.provider || "smart").toLowerCase();
   let model = String(settings.model || "");
@@ -836,6 +897,11 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
     sku: p.sku,
     stock: p.stock
   }));
+  const learningBrief = selectedLearning.map((l) => ({
+    customer_text: l.customer_text,
+    seller_text: l.seller_text,
+    source: l.source
+  }));
 
   if (provider === "openai" && openAiKey) {
     try {
@@ -848,7 +914,9 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
           "\nKonteks order: " +
           JSON.stringify(orderBrief) +
           "\nKonteks produk: " +
-          JSON.stringify(productBrief)
+          JSON.stringify(productBrief) +
+          "\nContoh gaya jawaban toko: " +
+          JSON.stringify(learningBrief)
       });
     } catch (_err) {
       provider = "smart";
@@ -864,7 +932,9 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
           "\nKonteks order: " +
           JSON.stringify(orderBrief) +
           "\nKonteks produk: " +
-          JSON.stringify(productBrief)
+          JSON.stringify(productBrief) +
+          "\nContoh gaya jawaban toko: " +
+          JSON.stringify(learningBrief)
       });
     } catch (_err) {
       provider = "smart";
@@ -872,7 +942,10 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
   }
 
   if (!text) {
-    const templates = selectedKnowledge.map((k) => k.template).filter(Boolean);
+    const templates = [
+      ...selectedLearning.map((l) => l.seller_text),
+      ...selectedKnowledge.map((k) => k.template)
+    ].filter(Boolean);
     text = smartReplyFromText(incomingText, templates);
     provider = "smart";
     model = "rule-engine";
@@ -882,7 +955,8 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
     text: String(text || "").slice(0, 1600),
     provider,
     model: model || (provider === "openai" ? openAiModel : provider === "claude" ? anthropicModel : "rule-engine"),
-    refs: selectedKnowledge.map((k) => ({ id: k.id, keyword: k.keyword, group: k.group }))
+    refs: selectedKnowledge.map((k) => ({ id: k.id, keyword: k.keyword, group: k.group })),
+    learning_refs: selectedLearning.map((l) => ({ id: l.id, customer_text: l.customer_text, source: l.source }))
   };
 }
 
@@ -1450,6 +1524,75 @@ app.get("/api/chat/ai/drafts", async (req, res) => {
   }
 });
 
+app.get("/api/chat/ai/learning", async (req, res) => {
+  try {
+    const shopId = String(req.query.shop_id || "").trim();
+    const conversationId = String(req.query.conversation_id || "").trim();
+    const search = String(req.query.search || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    const rows = await safeListAiLearning({
+      shopId,
+      conversationId,
+      search,
+      limit: Math.min(300, Math.max(1, Number(req.query.limit || 60)))
+    });
+    res.json({ ok: true, rows, stats: summarizeAiEffectiveness(rows) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/ai/learning", async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const conversationId = String(req.body.conversation_id || "").trim();
+    const customerText = String(req.body.customer_text || "").trim();
+    const sellerText = String(req.body.seller_text || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    if (!customerText) throw new Error("customer_text wajib");
+    if (!sellerText) throw new Error("seller_text wajib");
+    const row = await safeUpsertAiLearning({
+      id: req.body.id,
+      shop_id: shopId,
+      conversation_id: conversationId,
+      customer_text: customerText,
+      seller_text: sellerText,
+      source: String(req.body.source || "manual_feedback"),
+      score: req.body.score == null ? null : Number(req.body.score || 0),
+      notes: String(req.body.notes || "").trim(),
+      metadata_json: JSON.stringify(req.body.metadata || {}),
+      updated_at: nowIso()
+    });
+    res.json({ ok: true, row });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/ai/test-draft", async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const conversationId = String(req.body.conversation_id || "").trim();
+    const incomingText = String(req.body.incoming_text || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    if (!incomingText) throw new Error("incoming_text wajib");
+    const ai = await generateAiDraft({ shopId, conversationId, incomingText });
+    const recentLearning = await safeListAiLearning({ shopId, search: incomingText, limit: 20 });
+    const stats = summarizeAiEffectiveness(recentLearning);
+    res.json({
+      ok: true,
+      draft_text: ai.text,
+      provider: ai.provider,
+      model: ai.model,
+      refs: ai.refs || [],
+      learning_refs: ai.learning_refs || [],
+      stats
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
 app.post("/api/chat/ai/approve-send", async (req, res) => {
   try {
     const draftId = String(req.body.draft_id || "").trim();
@@ -1466,6 +1609,20 @@ app.post("/api/chat/ai/approve-send", async (req, res) => {
       const text = finalText || String((row && row.draft_text) || "");
       if (!text) throw new Error("draft_text kosong");
       await sendShopeeText(shopId, conversationId, text);
+      const customerText = String((row && row.source_text) || "").trim();
+      if (customerText) {
+        await safeUpsertAiLearning({
+          shop_id: shopId,
+          conversation_id: conversationId,
+          customer_text: customerText,
+          seller_text: text,
+          source: "ai_approved",
+          score: 5,
+          notes: "Approved dan dikirim dari draft AI.",
+          metadata_json: JSON.stringify({ draft_id: draftId }),
+          updated_at: nowIso()
+        });
+      }
       await updateAiDraft(draftId, { status: "sent" });
     }
     res.json({ ok: true, row });
@@ -1483,7 +1640,21 @@ app.post("/api/chat/send", async (req, res) => {
     if (!conversationId) throw new Error("conversation_id wajib");
     if (!text) throw new Error("text wajib");
     if (text.length > 1900) throw new Error("text terlalu panjang");
+    const customerText =
+      String(req.body.customer_text || "").trim() || (await latestIncomingText(conversationId, shopId));
     await sendShopeeText(shopId, conversationId, text);
+    if (customerText) {
+      await safeUpsertAiLearning({
+        shop_id: shopId,
+        conversation_id: conversationId,
+        customer_text: customerText,
+        seller_text: text,
+        source: "manual_reply",
+        score: 5,
+        notes: "Belajar dari balasan manual penjual.",
+        updated_at: nowIso()
+      });
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
@@ -1612,6 +1783,16 @@ app.post("/api/chat/ai/autonomous/run", async (req, res) => {
 
         if (!dryRun) {
           await sendShopeeText(shopId, conversationId, ai.text);
+          await safeUpsertAiLearning({
+            shop_id: shopId,
+            conversation_id: conversationId,
+            customer_text: incomingText,
+            seller_text: ai.text,
+            source: "autonomous_ai",
+            score: 4,
+            notes: "Balasan autonomous AI.",
+            updated_at: nowIso()
+          });
           await updateConversationStats(conversationId, {
             shop_id: shopId,
             unread_count: 0,

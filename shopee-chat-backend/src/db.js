@@ -35,7 +35,8 @@ function defaultState() {
     products: {},
     ai_knowledge: {},
     ai_settings: {},
-    ai_drafts: {}
+    ai_drafts: {},
+    ai_learning: {}
   };
 }
 
@@ -66,7 +67,8 @@ if (persistenceEnabled && fs.existsSync(absDbPath)) {
       products: parsed.products || {},
       ai_knowledge: parsed.ai_knowledge || {},
       ai_settings: parsed.ai_settings || {},
-      ai_drafts: parsed.ai_drafts || {}
+      ai_drafts: parsed.ai_drafts || {},
+      ai_learning: parsed.ai_learning || {}
     };
   } catch {
     state = defaultState();
@@ -634,4 +636,53 @@ export async function listAiDrafts({ shopId = "", conversationId = "", status = 
   });
   rows.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   return rows.slice(0, limit);
+}
+
+export async function listAiLearningSamples({ shopId = "", conversationId = "", search = "", limit = 80 } = {}) {
+  if (useSupabase) {
+    const query = {
+      select: "*",
+      order: "updated_at.desc",
+      limit
+    };
+    if (shopId) query.shop_id = `eq.${String(shopId)}`;
+    if (conversationId) query.conversation_id = `eq.${String(conversationId)}`;
+    if (search) query.customer_text = `ilike.*${String(search).replace(/\*/g, "")}*`;
+    return sbSelect("shopee_chat_ai_learning", query);
+  }
+  const term = String(search || "").toLowerCase();
+  const rows = Object.values(state.ai_learning).filter((r) => {
+    if (shopId && String(r.shop_id) !== String(shopId)) return false;
+    if (conversationId && String(r.conversation_id) !== String(conversationId)) return false;
+    if (!term) return true;
+    return (
+      String(r.customer_text || "").toLowerCase().includes(term) ||
+      String(r.seller_text || "").toLowerCase().includes(term) ||
+      String(r.notes || "").toLowerCase().includes(term)
+    );
+  });
+  rows.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  return rows.slice(0, limit);
+}
+
+export async function upsertAiLearningSample(row) {
+  const clean = {
+    id: String(row.id || `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+    shop_id: String(row.shop_id || ""),
+    conversation_id: String(row.conversation_id || ""),
+    customer_text: String(row.customer_text || "").trim(),
+    seller_text: String(row.seller_text || "").trim(),
+    source: String(row.source || "manual_reply"),
+    score: row.score == null ? null : Number(row.score || 0),
+    notes: String(row.notes || "").trim(),
+    metadata_json: String(row.metadata_json || ""),
+    updated_at: row.updated_at || nowIso()
+  };
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_ai_learning", [clean], "id");
+    return clean;
+  }
+  state.ai_learning[clean.id] = clean;
+  persist();
+  return clean;
 }

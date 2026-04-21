@@ -19,6 +19,8 @@
   var quickRepliesCache = [];
   var knowledgeCache = [];
   var aiDraftsCache = [];
+  var aiLearningCache = [];
+  var aiLearningStats = null;
   var aiSettings = null;
   var repliesManageMenu = window.localStorage.getItem("ajw_chat_replies_menu") || "quick";
   var knowledgeCategoryFilter = window.localStorage.getItem("ajw_chat_knowledge_filter") || "Semua";
@@ -31,6 +33,12 @@
     keyword: "",
     group_name: "",
     template: ""
+  });
+  var aiLabState = safeJson(window.localStorage.getItem("ajw_chat_ai_lab_form"), {
+    incoming_text: "",
+    generated_text: "",
+    score: 5,
+    notes: ""
   });
   var autonomousEnabled = window.localStorage.getItem("ajw_chat_ai_autonomous") === "1";
   var autonomousTimer = null;
@@ -390,6 +398,21 @@
     aiDraftsCache = data.rows || [];
   }
 
+  async function loadAiLearning() {
+    if (!currentShopId) {
+      aiLearningCache = [];
+      aiLearningStats = null;
+      return;
+    }
+    var url = "/api/chat/ai/learning?shop_id=" + encodeURIComponent(currentShopId) + "&limit=80";
+    if (selectedConversationId) {
+      url += "&conversation_id=" + encodeURIComponent(selectedConversationId);
+    }
+    var data = await apiGet(url);
+    aiLearningCache = data.rows || [];
+    aiLearningStats = data.stats || null;
+  }
+
   async function syncAll(refreshProducts) {
     currentShopId = selectedShopId();
     if (!currentShopId) throw new Error("shop_id wajib");
@@ -400,6 +423,7 @@
     await loadQuickReplies();
     await loadKnowledge();
     await loadAiSettings();
+    await loadAiLearning();
     await loadProducts(!!refreshProducts);
   }
 
@@ -418,7 +442,7 @@
     scrollThreadToBottom();
 
     try {
-      await Promise.all([loadMessages(), loadOrders(false), loadAiDrafts()]);
+      await Promise.all([loadMessages(), loadOrders(false), loadAiDrafts(), loadAiLearning()]);
       renderMessages();
       renderSidePanel();
       renderAiDraftPanel();
@@ -430,7 +454,7 @@
       conversation_id: selectedConversationId
     })
       .then(function () {
-        return Promise.all([loadMessages(), loadOrders(true), loadConversations(), loadAiDrafts()]);
+        return Promise.all([loadMessages(), loadOrders(true), loadConversations(), loadAiDrafts(), loadAiLearning()]);
       })
       .then(function () {
         apiPost("/api/chat/conversation/read", {
@@ -504,7 +528,7 @@
         currentShopId = String(el.getAttribute("data-shop-id") || "");
         selectedConversationId = "";
         window.localStorage.setItem("ajw_chat_shop_id", currentShopId);
-        Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings()]).then(function () {
+        Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings(), loadAiLearning()]).then(function () {
           if (selectedConversationId) {
             loadMessages().then(function () {
               Promise.all([loadOrders(false), loadAiDrafts()]).then(renderAll);
@@ -974,6 +998,69 @@
     return map;
   }
 
+  function latestIncomingFromCache() {
+    var rows = (messagesCache || []).slice().reverse();
+    for (var i = 0; i < rows.length; i += 1) {
+      var row = rows[i];
+      if (String(row.from_id || "") !== String(currentShopId || "")) {
+        return String(row.content_text || row.content_order_sn || "").trim();
+      }
+    }
+    return "";
+  }
+
+  function renderAiLabPanel() {
+    var stats = aiLearningStats || { total_learning: 0, scored_count: 0, avg_score: 0, label: "perlu_belajar" };
+    var recent = (aiLearningCache || []).slice(0, 8);
+    return (
+      '<div class="ajw-reply-main">' +
+      '<div class="ajw-chat-card">' +
+      '<div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">' +
+      '<div><div style="font-size:14px;font-weight:800;color:var(--tx)">Lab Uji AI Chatbot</div><div style="font-size:11px;color:var(--tx3);margin-top:4px">Tes pertanyaan pelanggan, lihat draft AI, nilai hasilnya, lalu simpan sebagai bahan belajar.</div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      '<span class="ajw-chat-pill blue">Belajar ' + escSafe(stats.total_learning || 0) + '</span>' +
+      '<span class="ajw-chat-pill ' + ((stats.avg_score || 0) >= 4 ? "green" : (stats.avg_score || 0) >= 3 ? "blue" : "red") + '">Skor ' + escSafe(stats.avg_score || 0) + '/5</span>' +
+      '<span class="ajw-chat-pill">' + escSafe(stats.label || "-") + '</span>' +
+      '</div></div>' +
+      '<textarea id="CHAT-AILAB-INCOMING" class="fi" style="margin-top:10px;min-height:88px" placeholder="Tulis pesan pelanggan untuk diuji...">' + escSafe(aiLabState.incoming_text || "") + '</textarea>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
+      '<button id="CHAT-AILAB-USE-ACTIVE" class="btns">Ambil dari Chat Aktif</button>' +
+      '<button id="CHAT-AILAB-GENERATE" class="btnp">Uji Draft AI</button>' +
+      '</div>' +
+      '<textarea id="CHAT-AILAB-DRAFT" class="fi" style="margin-top:10px;min-height:140px" placeholder="Hasil draft AI akan tampil di sini...">' + escSafe(aiLabState.generated_text || "") + '</textarea>' +
+      '<div style="display:grid;grid-template-columns:140px 1fr auto;gap:8px;margin-top:8px;align-items:center">' +
+      '<select id="CHAT-AILAB-SCORE" class="fi">' +
+      '<option value="5"' + (Number(aiLabState.score || 5) === 5 ? " selected" : "") + '>5 - Sangat cocok</option>' +
+      '<option value="4"' + (Number(aiLabState.score || 5) === 4 ? " selected" : "") + '>4 - Cocok</option>' +
+      '<option value="3"' + (Number(aiLabState.score || 5) === 3 ? " selected" : "") + '>3 - Lumayan</option>' +
+      '<option value="2"' + (Number(aiLabState.score || 5) === 2 ? " selected" : "") + '>2 - Kurang</option>' +
+      '<option value="1"' + (Number(aiLabState.score || 5) === 1 ? " selected" : "") + '>1 - Tidak cocok</option>' +
+      '</select>' +
+      '<input id="CHAT-AILAB-NOTES" class="fi" placeholder="Catatan evaluasi AI..." value="' + escSafe(aiLabState.notes || "") + '">' +
+      '<button id="CHAT-AILAB-SAVE-LEARN" class="btnp">Simpan Belajar</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="ajw-chat-card">' +
+      '<div style="font-size:12px;font-weight:800;color:var(--tx);margin-bottom:8px">Contoh Belajar dari Balasan Anda</div>' +
+      (recent.length
+        ? recent
+            .map(function (row) {
+              return '<div style="padding:10px 0;border-top:1px solid var(--ln)">' +
+                '<div style="font-size:11px;color:var(--tx3)">Pelanggan</div>' +
+                '<div style="font-size:12px;color:var(--tx2);white-space:pre-wrap">' + escSafe(row.customer_text || "-") + '</div>' +
+                '<div style="font-size:11px;color:var(--tx3);margin-top:8px">Balasan toko</div>' +
+                '<div style="font-size:12px;color:var(--tx);white-space:pre-wrap">' + escSafe(row.seller_text || "-") + '</div>' +
+                '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><span class="ajw-chat-pill">' + escSafe(row.source || "manual_reply") + '</span>' +
+                (row.score != null ? '<span class="ajw-chat-pill blue">Skor ' + escSafe(row.score) + '</span>' : '') +
+                '</div></div>';
+            })
+            .join("")
+        : '<div class="ajw-chat-empty">Belum ada contoh belajar. Setelah Anda balas customer atau simpan hasil uji, data belajar akan muncul di sini.</div>') +
+      '</div>' +
+      '</div>'
+    );
+  }
+
   function renderRepliesTab() {
     var grouped = quickRepliesCache.filter(function (row) {
       return normalizeReplyGroup(row.group_name) === replyGroupFilter;
@@ -984,6 +1071,7 @@
       '<button class="' + (repliesManageMenu === "managequick" ? "on" : "") + '" data-replies-menu="managequick">Tambah Balasan</button>' +
       '<button class="' + (repliesManageMenu === "knowledge" ? "on" : "") + '" data-replies-menu="knowledge">Pusat Informasi</button>' +
       '<button class="' + (repliesManageMenu === "ai" ? "on" : "") + '" data-replies-menu="ai">Mode AI</button>' +
+      '<button class="' + (repliesManageMenu === "lab" ? "on" : "") + '" data-replies-menu="lab">Lab AI</button>' +
       "</div>";
 
     if (repliesManageMenu === "managequick") {
@@ -1079,6 +1167,10 @@
         "</div>" +
         "</div></div>"
       );
+    }
+
+    if (repliesManageMenu === "lab") {
+      return '<div class="ajw-reply-layout">' + menuSidebar + renderAiLabPanel() + "</div>";
     }
 
     return (
@@ -1214,7 +1306,7 @@
         quickFormState = { keyword: "", title: "", content: "" };
         persistQuickFormState();
         await loadQuickReplies();
-        renderSidePanel();
+        rerenderRepliesWorkspace();
         toast("Balasan cepat tersimpan.", "success");
       };
     }
@@ -1250,7 +1342,7 @@
         var id = String(el.getAttribute("data-qr-del") || "");
         apiDelete("/api/chat/quick-replies/" + encodeURIComponent(id))
           .then(loadQuickReplies)
-          .then(renderAll)
+          .then(rerenderRepliesWorkspace)
           .catch(function (err) {
             toast("Gagal hapus balasan cepat: " + (err.message || err), "error");
           });
@@ -1276,7 +1368,7 @@
         await loadKnowledge();
         knowledgeFormState = { keyword: "", group_name: groupName || knowledgeCategoryFilter || "General", template: "" };
         persistKnowledgeFormState();
-        renderSidePanel();
+        rerenderRepliesWorkspace();
         toast("Pusat informasi tersimpan.", "success");
       };
     }
@@ -1307,7 +1399,7 @@
           knowledgeFormState.group_name = knowledgeCategoryFilter === "Semua" ? "General" : knowledgeCategoryFilter;
           persistKnowledgeFormState();
         }
-        renderSidePanel();
+        rerenderRepliesWorkspace();
       });
     });
 
@@ -1317,7 +1409,7 @@
         var id = String(el.getAttribute("data-kn-del") || "");
         apiDelete("/api/chat/knowledge/" + encodeURIComponent(id))
           .then(loadKnowledge)
-          .then(renderSidePanel)
+          .then(rerenderRepliesWorkspace)
           .catch(function (err) {
             toast("Gagal hapus referensi: " + (err.message || err), "error");
           });
@@ -1329,7 +1421,7 @@
         lastUserActionAt = Date.now();
         replyGroupFilter = String(el.getAttribute("data-reply-group") || "Umum");
         window.localStorage.setItem("ajw_chat_reply_group", replyGroupFilter);
-        renderSidePanel();
+        rerenderRepliesWorkspace();
       });
     });
 
@@ -1338,8 +1430,11 @@
         lastUserActionAt = Date.now();
         repliesManageMenu = String(el.getAttribute("data-replies-menu") || "quick");
         window.localStorage.setItem("ajw_chat_replies_menu", repliesManageMenu);
-        renderMessages();
-        renderSidePanel();
+        if (repliesManageMenu === "lab") {
+          loadAiLearning().finally(rerenderRepliesWorkspace);
+          return;
+        }
+        rerenderRepliesWorkspace();
       });
     });
 
@@ -1430,6 +1525,107 @@
           });
       });
     }
+
+    var aiLabIncoming = actionRoot.querySelector("#CHAT-AILAB-INCOMING");
+    if (aiLabIncoming) {
+      aiLabIncoming.addEventListener("input", function () {
+        aiLabState.incoming_text = String(aiLabIncoming.value || "");
+        persistAiLabState();
+      });
+    }
+
+    var aiLabDraft = actionRoot.querySelector("#CHAT-AILAB-DRAFT");
+    if (aiLabDraft) {
+      aiLabDraft.addEventListener("input", function () {
+        aiLabState.generated_text = String(aiLabDraft.value || "");
+        persistAiLabState();
+      });
+    }
+
+    var aiLabNotes = actionRoot.querySelector("#CHAT-AILAB-NOTES");
+    if (aiLabNotes) {
+      aiLabNotes.addEventListener("input", function () {
+        aiLabState.notes = String(aiLabNotes.value || "");
+        persistAiLabState();
+      });
+    }
+
+    var aiLabScore = actionRoot.querySelector("#CHAT-AILAB-SCORE");
+    if (aiLabScore) {
+      aiLabScore.addEventListener("change", function () {
+        aiLabState.score = Number(aiLabScore.value || 5);
+        persistAiLabState();
+      });
+    }
+
+    var aiLabUseActive = actionRoot.querySelector("#CHAT-AILAB-USE-ACTIVE");
+    if (aiLabUseActive) {
+      aiLabUseActive.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
+        aiLabState.incoming_text = latestIncomingFromCache() || "";
+        persistAiLabState();
+        renderMessages();
+        renderSidePanel();
+      });
+    }
+
+    var aiLabGenerate = actionRoot.querySelector("#CHAT-AILAB-GENERATE");
+    if (aiLabGenerate) {
+      aiLabGenerate.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
+        var incoming = String((actionRoot.querySelector("#CHAT-AILAB-INCOMING") || {}).value || "").trim();
+        if (!currentShopId) return toast("Pilih toko dulu.", "warn");
+        if (!incoming) return toast("Isi pesan pelanggan untuk diuji.", "warn");
+        apiPost("/api/chat/ai/test-draft", {
+          shop_id: currentShopId,
+          conversation_id: selectedConversationId || "",
+          incoming_text: incoming
+        })
+          .then(function (data) {
+            aiLabState.incoming_text = incoming;
+            aiLabState.generated_text = String(data.draft_text || "");
+            persistAiLabState();
+            aiLearningStats = data.stats || aiLearningStats;
+            rerenderRepliesWorkspace();
+            toast("Draft AI uji berhasil dibuat.", "success");
+          })
+          .catch(function (err) {
+            toast("Gagal uji AI: " + (err.message || err), "error");
+          });
+      });
+    }
+
+    var aiLabSaveLearn = actionRoot.querySelector("#CHAT-AILAB-SAVE-LEARN");
+    if (aiLabSaveLearn) {
+      aiLabSaveLearn.addEventListener("click", function () {
+        lastUserActionAt = Date.now();
+        var incoming = String((actionRoot.querySelector("#CHAT-AILAB-INCOMING") || {}).value || "").trim();
+        var draftText = String((actionRoot.querySelector("#CHAT-AILAB-DRAFT") || {}).value || "").trim();
+        var score = Number((actionRoot.querySelector("#CHAT-AILAB-SCORE") || {}).value || aiLabState.score || 5);
+        var notes = String((actionRoot.querySelector("#CHAT-AILAB-NOTES") || {}).value || "").trim();
+        if (!currentShopId) return toast("Pilih toko dulu.", "warn");
+        if (!incoming || !draftText) return toast("Isi pesan pelanggan dan draft AI dulu.", "warn");
+        apiPost("/api/chat/ai/learning", {
+          shop_id: currentShopId,
+          conversation_id: selectedConversationId || "",
+          customer_text: incoming,
+          seller_text: draftText,
+          score: score,
+          notes: notes,
+          source: "ai_lab_feedback"
+        })
+          .then(function () {
+            return loadAiLearning();
+          })
+          .then(function () {
+            rerenderRepliesWorkspace();
+            toast("Contoh belajar AI tersimpan.", "success");
+          })
+          .catch(function (err) {
+            toast("Gagal simpan pembelajaran AI: " + (err.message || err), "error");
+          });
+      });
+    }
   }
 
   function renderHeaderState() {
@@ -1459,6 +1655,12 @@
     if (compose) compose.style.display = activeSideTab === "replies" ? "none" : "";
   }
 
+  function rerenderRepliesWorkspace() {
+    renderMessages();
+    renderSidePanel();
+    renderAiDraftPanel();
+  }
+
   function renderFilterState() {
     document.querySelectorAll("[data-chat-filter]").forEach(function (el) {
       var on = String(el.getAttribute("data-chat-filter")) === String(activeFilter);
@@ -1485,6 +1687,10 @@
 
   function persistKnowledgeFormState() {
     window.localStorage.setItem("ajw_chat_knowledge_form", JSON.stringify(knowledgeFormState || {}));
+  }
+
+  function persistAiLabState() {
+    window.localStorage.setItem("ajw_chat_ai_lab_form", JSON.stringify(aiLabState || {}));
   }
 
   async function runAutonomousCycle() {
@@ -1565,6 +1771,7 @@
     if (!selectedConversationId) return toast("Pilih percakapan dulu.", "warn");
     var ta = document.getElementById("CHAT-REPLY-TEXT");
     var text = String((ta && ta.value) || "").trim();
+    var latestCustomerText = latestIncomingFromCache();
     if (!text && !attachmentQueue.length) return toast("Isi pesan atau lampiran dulu.", "warn");
 
     try {
@@ -1575,7 +1782,8 @@
         await apiPost("/api/chat/send", {
           shop_id: currentShopId,
           conversation_id: selectedConversationId,
-          text: text
+          text: text,
+          customer_text: latestCustomerText
         });
       }
       attachmentQueue = [];
@@ -1583,6 +1791,7 @@
       await loadMessages();
       await loadOrders(true);
       await loadConversations();
+      await loadAiLearning();
       renderAll();
       scrollThreadToBottom();
       toast("Pesan berhasil dikirim.", "success");
@@ -1733,7 +1942,7 @@
             });
           })
           .then(function () {
-            return Promise.all([loadAiDrafts(), loadMessages(), loadConversations()]);
+            return Promise.all([loadAiDrafts(), loadMessages(), loadConversations(), loadAiLearning()]);
           })
           .then(function () {
             renderMessages();
@@ -1755,7 +1964,7 @@
         selectedConversationId = "";
         Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false)])
           .then(function () {
-            return Promise.all([loadKnowledge(), loadAiSettings()]);
+            return Promise.all([loadKnowledge(), loadAiSettings(), loadAiLearning()]);
           })
           .then(function () {
             renderAll();
@@ -1937,7 +2146,7 @@
         return loadConversations();
       })
       .then(function () {
-        return Promise.all([loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings()]);
+        return Promise.all([loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings(), loadAiLearning()]);
       })
       .then(function () {
         if (selectedConversationId) {
