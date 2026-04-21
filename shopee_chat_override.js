@@ -48,45 +48,45 @@
     var style = document.createElement("style");
     style.id = "AJW-CHAT-STYLES";
     style.textContent =
-      "#V-chat{width:100%}" +
-      ".ajw-chat-shell{display:grid;grid-template-columns:220px 340px minmax(0,1fr) 360px;gap:0;min-height:calc(100vh - 110px);border:1px solid var(--bd);border-radius:0;background:linear-gradient(180deg,var(--bg2),var(--bg4));overflow:hidden}" +
-      ".ajw-chat-col{min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--bd);background:var(--bg2)}" +
+      "#V-chat{width:100%;max-width:none!important;position:fixed;left:0;right:0;top:52px;bottom:0;z-index:40;background:radial-gradient(1200px 500px at 20% -20%,rgba(245,158,11,.08),transparent),linear-gradient(180deg,#111317,#0b0d10)}" +
+      ".ajw-chat-shell{display:grid;grid-template-columns:220px 340px minmax(0,1fr) 360px;gap:0;height:calc(100vh - 52px - 58px);border:1px solid var(--bd);border-radius:0;background:linear-gradient(180deg,var(--bg2),var(--bg4));overflow:hidden}" +
+      ".ajw-chat-col{min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--bd);background:linear-gradient(180deg,rgba(24,27,33,.9),rgba(16,18,22,.9))}" +
       ".ajw-chat-col:last-child{border-right:none}" +
-      ".ajw-chat-head{padding:12px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px;background:rgba(255,255,255,.5)}" +
+      ".ajw-chat-head{padding:12px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px;background:linear-gradient(180deg,rgba(36,40,47,.86),rgba(25,28,33,.86))}" +
       ".ajw-chat-body{flex:1;min-height:0;overflow:auto}" +
-      ".ajw-chat-toolbar{display:grid;grid-template-columns:1.2fr 180px auto auto auto;gap:8px;padding:10px 12px;margin-bottom:0;border:1px solid var(--bd);border-bottom:none;border-radius:0;background:var(--bg2)}" +
-      ".ajw-chat-shop{padding:10px 12px;border-bottom:1px solid var(--bd);cursor:pointer;background:transparent}" +
+      ".ajw-chat-toolbar{display:grid;grid-template-columns:1.2fr 180px auto auto auto;gap:8px;padding:10px 12px;margin-bottom:0;border:1px solid var(--bd);border-bottom:none;border-radius:0;background:linear-gradient(180deg,#1c2027,#14181e)}" +
+      ".ajw-chat-shop{padding:10px 12px;border-bottom:1px solid var(--bd);cursor:pointer;background:transparent;color:var(--tx2)}" +
       ".ajw-chat-shop.on{background:rgba(245,158,11,.14)}" +
-      ".ajw-chat-conv{padding:12px 14px;border-bottom:1px solid var(--bd);cursor:pointer;background:transparent}" +
-      ".ajw-chat-conv.on{background:rgba(59,130,246,.12)}" +
+      ".ajw-chat-conv{padding:12px 14px;border-bottom:1px solid var(--bd);cursor:pointer;background:transparent;color:var(--tx2)}" +
+      ".ajw-chat-conv.on{background:linear-gradient(90deg,rgba(59,130,246,.16),rgba(59,130,246,.04))}" +
       ".ajw-chat-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:700}" +
       ".ajw-chat-pill.red{background:#7f1d1d;color:#fecaca}" +
       ".ajw-chat-pill.blue{background:#1d4ed8;color:#dbeafe}" +
       ".ajw-chat-pill.gold{background:#78350f;color:#fde68a}" +
       ".ajw-chat-filter{border:1px solid var(--bd);background:var(--bg3);color:var(--tx2);border-radius:999px;padding:5px 10px;font-size:10px;font-weight:700;cursor:pointer}" +
       ".ajw-chat-filter.on{border-color:#f59e0b;background:rgba(245,158,11,.16);color:#b45309}" +
-      ".ajw-chat-thread{flex:1;overflow:auto;padding:16px;background:linear-gradient(180deg,#f9fafb,var(--bg4))}" +
+      ".ajw-chat-thread{flex:1;overflow:auto;padding:16px;background:radial-gradient(800px 280px at 80% 0,rgba(56,189,248,.07),transparent),linear-gradient(180deg,#141820,#0f1217)}" +
       ".ajw-chat-bubble-row{display:flex;margin-bottom:10px}" +
       ".ajw-chat-bubble-row.mine{justify-content:flex-end}" +
-      ".ajw-chat-bubble{max-width:76%;padding:10px 12px;border-radius:14px;border:1px solid var(--bd);background:#fff;color:var(--tx)}" +
-      ".ajw-chat-bubble.mine{background:#e0f2fe;border-color:#bae6fd}" +
-      ".ajw-chat-compose{border-top:1px solid var(--bd);padding:10px 12px;background:var(--bg2)}" +
+      ".ajw-chat-bubble{max-width:76%;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(29,33,41,.88);color:var(--tx)}" +
+      ".ajw-chat-bubble.mine{background:linear-gradient(180deg,rgba(37,99,235,.36),rgba(30,64,175,.28));border-color:rgba(147,197,253,.35)}" +
+      ".ajw-chat-compose{border-top:1px solid var(--bd);padding:10px 12px;background:linear-gradient(180deg,rgba(22,25,31,.95),rgba(15,18,23,.95))}" +
       ".ajw-chat-compose-tools{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}" +
       ".ajw-chat-iconbtn{width:34px;height:34px;border-radius:10px;border:1px solid var(--bd);background:var(--bg3);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px}" +
       ".ajw-chat-attach{display:flex;gap:8px;overflow:auto;padding-bottom:6px}" +
-      ".ajw-chat-attach-card{min-width:180px;border:1px solid var(--bd);border-radius:10px;padding:8px;background:var(--bg3)}" +
+      ".ajw-chat-attach-card{min-width:180px;border:1px solid var(--bd);border-radius:10px;padding:8px;background:rgba(31,35,43,.86)}" +
       ".ajw-chat-side-tabs{display:flex;border-bottom:1px solid var(--bd)}" +
       ".ajw-chat-side-tab{flex:1;padding:12px 10px;text-align:center;border:none;background:transparent;cursor:pointer;font-weight:700;font-size:12px;color:var(--tx2)}" +
       ".ajw-chat-side-tab.on{color:#1d4ed8;border-bottom:2px solid #1d4ed8}" +
       ".ajw-chat-side-content{padding:12px 14px;overflow:auto;flex:1}" +
-      ".ajw-chat-card{border:1px solid var(--bd);border-radius:12px;padding:12px;background:var(--bg3);margin-bottom:10px}" +
+      ".ajw-chat-card{border:1px solid var(--bd);border-radius:12px;padding:12px;background:rgba(28,32,40,.9);margin-bottom:10px}" +
       ".ajw-chat-product{display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:10px;align-items:center}" +
-      ".ajw-chat-product img{width:58px;height:58px;border-radius:10px;object-fit:cover;border:1px solid var(--bd);background:#fff}" +
+      ".ajw-chat-product img{width:58px;height:58px;border-radius:10px;object-fit:cover;border:1px solid var(--bd);background:#13161b}" +
       ".ajw-chat-emoji{position:absolute;left:12px;bottom:120px;z-index:50;padding:10px;border:1px solid var(--bd);background:var(--bg2);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.16);display:grid;grid-template-columns:repeat(6,1fr);gap:6px;width:240px}" +
       ".ajw-chat-emoji button{border:none;background:var(--bg3);border-radius:8px;padding:8px;cursor:pointer;font-size:16px}" +
       ".ajw-chat-empty{padding:18px;color:var(--tx3);font-size:12px}" +
       "@media (max-width:1300px){.ajw-chat-shell{grid-template-columns:200px 300px minmax(0,1fr) 320px}}" +
-      "@media (max-width:980px){.ajw-chat-toolbar{grid-template-columns:1fr 1fr auto;}.ajw-chat-shell{grid-template-columns:1fr;min-height:auto}.ajw-chat-col{border-right:none;border-bottom:1px solid var(--bd)}.ajw-chat-col:last-child{border-bottom:none}}";
+      "@media (max-width:980px){#V-chat{top:52px}.ajw-chat-toolbar{grid-template-columns:1fr 1fr auto;}.ajw-chat-shell{grid-template-columns:1fr;height:calc(100vh - 52px - 58px)}.ajw-chat-col{border-right:none;border-bottom:1px solid var(--bd)}.ajw-chat-col:last-child{border-bottom:none}}";
     document.head.appendChild(style);
   }
 
@@ -118,10 +118,12 @@
       body.style.maxWidth = "none";
       body.style.padding = "0";
       body.style.margin = "0";
+      body.style.width = "100vw";
     } else if (savedBodyStyle) {
       body.style.maxWidth = savedBodyStyle.maxWidth;
       body.style.padding = savedBodyStyle.padding;
       body.style.margin = savedBodyStyle.margin;
+      body.style.width = "";
     }
   }
 
@@ -750,7 +752,8 @@
 
   function startRealtime() {
     stopRealtime();
-    realtimeTimer = setInterval(runRealtimePoll, 8000);
+    runRealtimePoll();
+    realtimeTimer = setInterval(runRealtimePoll, 4000);
   }
 
   function stopRealtime() {
@@ -919,6 +922,9 @@
     applyWideLayout(true);
     hideOtherViews();
     v.style.display = "block";
+    v.style.maxWidth = "none";
+    v.style.margin = "0";
+    v.style.padding = "10px 12px 12px";
     v.innerHTML =
       '<div class="ajw-chat-toolbar">' +
       '<input id="CHAT-API-BASE" class="fi" placeholder="https://shopeebackend.vercel.app" value="' + escSafe(API_BASE) + '">' +
