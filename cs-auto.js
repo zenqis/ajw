@@ -209,13 +209,44 @@
     };
   }
 
+  function pickList(payload){
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload.rows)) return payload.rows;
+    if (Array.isArray(payload.conversations)) return payload.conversations;
+    if (Array.isArray(payload.messages)) return payload.messages;
+    if (Array.isArray(payload.orders)) return payload.orders;
+    if (Array.isArray(payload.products)) return payload.products;
+    if (Array.isArray(payload.items)) return payload.items;
+    if (Array.isArray(payload.list)) return payload.list;
+    if (Array.isArray(payload.data)) return payload.data;
+    return [];
+  }
+
+  function toTs(v){
+    if (v == null) return 0;
+    if (typeof v === 'number') {
+      if (!isFinite(v)) return 0;
+      return v < 1e12 ? (v * 1000) : v;
+    }
+    if (typeof v === 'string') {
+      if (/^\d+$/.test(v)) {
+        var n = Number(v);
+        return n < 1e12 ? (n * 1000) : n;
+      }
+      var d = Date.parse(v);
+      return isNaN(d) ? 0 : d;
+    }
+    return 0;
+  }
+
   /* ---------- 7. API wrappers ---------- */
   var API = {
     conversations: function(){
-      return api('/api/chat/conversations?shop_id='+encodeURIComponent(S.shopId)+'&filter='+encodeURIComponent(S.filter));
+      return api('/api/chat/conversations?shop_id='+encodeURIComponent(S.shopId)+'&filter='+encodeURIComponent(S.filter)+'&limit=120&sync=1');
     },
     messages: function(cid){
-      return api('/api/chat/messages?conversation_id='+encodeURIComponent(cid)+'&limit=200&order=asc');
+      return api('/api/chat/messages?conversation_id='+encodeURIComponent(cid)+'&shop_id='+encodeURIComponent(S.shopId)+'&limit=200&order=asc');
     },
     sync: function(){
       return api('/api/chat/sync', { body: { shop_id: S.shopId } });
@@ -395,9 +426,13 @@
     var html = '';
     for (var i=0; i<S.messages.length; i++){
       var m = S.messages[i];
-      var inc = !m.from_shop_id || (m.from_shop_id && String(m.from_shop_id) !== String(S.shopId));
-      /* Shopee convention: from_shop_id present => seller message */
-      if (m.from_shop_id) inc = false;
+      var fromShop = m.from_shop_id != null ? String(m.from_shop_id) : '';
+      var fromId = m.from_id != null ? String(m.from_id) : '';
+      var sellerId = String(S.shopId || '');
+      var isSeller = false;
+      if (fromShop) isSeller = fromShop === sellerId;
+      else if (fromId) isSeller = fromId === sellerId;
+      var inc = !isSeller;
       var cls = inc ? 'inc' : (m.source === 'ai' || m.by_ai ? 'ai' : 'out');
       var text = (m.content && (m.content.text || m.content.item_name)) || m.message || m.text || '';
       if (typeof text !== 'string') text = JSON.stringify(text);
@@ -898,8 +933,18 @@
     S.loadingChats = true;
     renderListOnly();
     return API.conversations().then(function(r){
-      var list = (r && (r.conversations || r.data || r.list)) || (Array.isArray(r)?r:[]);
-      S.conversations = Array.isArray(list) ? list : [];
+      S.lastConvSig = (r && r.last_conv_sig) || S.lastConvSig;
+      S.lastMsgSig = (r && r.last_msg_sig) || S.lastMsgSig;
+      var list = pickList(r);
+      S.conversations = (Array.isArray(list) ? list : []).sort(function(a,b){
+        var aTs = toTs(a.last_message_timestamp || a.last_message_time || a.updated_at || a.last_message_timestamp_raw);
+        var bTs = toTs(b.last_message_timestamp || b.last_message_time || b.updated_at || b.last_message_timestamp_raw);
+        return bTs - aTs;
+      });
+      if (S.activeConvId && !S.conversations.some(function(c){ return String(c.conversation_id||c.id)===String(S.activeConvId); })) {
+        S.activeConvId = null;
+        S.messages = [];
+      }
       S.loadingChats = false;
       renderListOnly();
     }).catch(function(e){
@@ -917,7 +962,8 @@
     var box = mount && mount.querySelector('#cs-msgs');
     if (box) box.innerHTML = '<div class="cs-empty">Memuat pesan...</div>';
     return API.messages(cid).then(function(r){
-      var list = (r && (r.messages || r.data || r.list)) || (Array.isArray(r)?r:[]);
+      S.lastMsgSig = (r && r.last_msg_sig) || S.lastMsgSig;
+      var list = pickList(r);
       S.messages = Array.isArray(list) ? list : [];
       S.loadingMsgs = false;
       renderMiddleOnly();
@@ -928,13 +974,13 @@
     });
   }
 
-  function loadOrders(){ return API.orders().then(function(r){ S.orders = (r && (r.orders||r.data||r.list)) || (Array.isArray(r)?r:[]); if (S.sideTab==='orders') renderSide(); }).catch(function(){}); }
-  function loadProducts(){ return API.products().then(function(r){ S.products = (r && (r.products||r.data||r.list)) || (Array.isArray(r)?r:[]); if (S.sideTab==='products') renderSide(); }).catch(function(){}); }
-  function loadQuickReplies(){ return API.quickList().then(function(r){ S.quickReplies = (r && (r.items||r.data||r.list)) || (Array.isArray(r)?r:[]); if (S.sideTab==='quick') renderSide(); }).catch(function(){}); }
-  function loadKnowledge(){ return API.knowList().then(function(r){ S.knowledge = (r && (r.items||r.data||r.list)) || (Array.isArray(r)?r:[]); if (S.sideTab==='knowledge') renderSide(); }).catch(function(){}); }
+  function loadOrders(){ return API.orders().then(function(r){ S.orders = pickList(r); if (S.sideTab==='orders') renderSide(); }).catch(function(){}); }
+  function loadProducts(){ return API.products().then(function(r){ S.products = pickList(r); if (S.sideTab==='products') renderSide(); }).catch(function(){}); }
+  function loadQuickReplies(){ return API.quickList().then(function(r){ S.quickReplies = pickList(r); if (S.sideTab==='quick') renderSide(); }).catch(function(){}); }
+  function loadKnowledge(){ return API.knowList().then(function(r){ S.knowledge = pickList(r); if (S.sideTab==='knowledge') renderSide(); }).catch(function(){}); }
   function loadAISettings(){ return API.aiSettingsGet().then(function(r){ S.aiSettings = (r && (r.settings||r)) || {}; /* Sync mode select */ syncModeFromSettings(); if (S.sideTab==='ai') renderSide(); }).catch(function(){}); }
   function loadAICredStatus(){ return API.aiCredStatus().then(function(r){ S.aiCredStatus = r || {}; if (S.sideTab==='ai') renderSide(); }).catch(function(){}); }
-  function loadLearning(){ return API.aiLearnList().then(function(r){ S.aiLearning = (r && (r.items||r.data||r.list)) || (Array.isArray(r)?r:[]); if (S.sideTab==='lab') renderSide(); }).catch(function(){}); }
+  function loadLearning(){ return API.aiLearnList().then(function(r){ S.aiLearning = pickList(r); if (S.sideTab==='lab') renderSide(); }).catch(function(){}); }
 
   function syncModeFromSettings(){
     if (!S.aiSettings) return;
@@ -983,7 +1029,7 @@
         if (msgChanged && S.activeConvId) loadMessages(S.activeConvId);
       }).catch(function(){});
     };
-    S.pollTimer = setInterval(tick, 6000);
+    S.pollTimer = setInterval(tick, 3000);
   }
   function stopPolling(){
     if (S.pollTimer){ clearInterval(S.pollTimer); S.pollTimer = null; }
