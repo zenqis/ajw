@@ -192,7 +192,9 @@ async function ensureAccessToken(shopId) {
   const maxAgeMs = Math.max(0, Number(token.expire_in || 0) - 300) * 1000;
   const expired = !updatedAt || Date.now() - updatedAt >= maxAgeMs;
   if (!expired) return token.access_token;
-  if (!token.refresh_token) return token.access_token;
+  if (!token.refresh_token) {
+    throw new Error("Token shop kedaluwarsa dan refresh_token tidak ada. OAuth ulang diperlukan.");
+  }
   return refreshAccessToken(shopId, token.refresh_token);
 }
 
@@ -257,7 +259,7 @@ async function syncConversations(shopId) {
   const queryObj = Object.fromEntries(new URLSearchParams(query));
   queryObj.direction = "latest";
   queryObj.type = "all";
-  queryObj.page_size = "100";
+  queryObj.page_size = "50";
 
   const data = await callShopee(path, "GET", { query: queryObj });
   if (data.error) throw new Error(`${data.error}: ${data.message || "get_conversation_list gagal"}`);
@@ -283,7 +285,8 @@ async function syncConversations(shopId) {
     }))
   );
 
-  for (const c of conversations.slice(0, 30)) {
+  // Keep realtime snappy: sync message detail only for hottest conversations.
+  for (const c of conversations.slice(0, 12)) {
     await syncConversationMessages(shopId, c.conversation_id);
   }
 
@@ -678,9 +681,18 @@ app.get("/api/chat/conversations", async (req, res) => {
     const offset = Math.max(0, Number(req.query.offset || 0));
     const shopId = String(req.query.shop_id || "");
     const filter = String(req.query.filter || "all").toLowerCase();
+    const recentDays = Math.min(3650, Math.max(1, Number(req.query.recent_days || 90)));
+    const minTs = Math.floor(Date.now() / 1000) - recentDays * 24 * 60 * 60;
     let rows = await listConversationsWithStats({ shopId, limit: 300, offset: 0 });
     if (filter === "unreplied") rows = rows.filter((r) => Number(r.has_unreplied || 0) > 0);
     if (filter === "unread") rows = rows.filter((r) => Number(r.unread_count || 0) > 0);
+    rows = rows.filter((r) => Number(r.last_message_timestamp || 0) >= minTs);
+    if (!rows.length) {
+      // Fallback so UI does not look empty when shop has no recent interaction.
+      rows = (await listConversationsWithStats({ shopId, limit: 100, offset: 0 }))
+        .sort((a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0))
+        .slice(0, 30);
+    }
     rows = rows.slice(offset, offset + limit);
     res.json({ ok: true, rows });
   } catch (err) {

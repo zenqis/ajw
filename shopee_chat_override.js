@@ -210,7 +210,7 @@
   }
 
   async function loadConversations() {
-    var qs = "?limit=120";
+    var qs = "?limit=120&recent_days=90";
     if (currentShopId) qs += "&shop_id=" + encodeURIComponent(currentShopId);
     if (activeFilter) qs += "&filter=" + encodeURIComponent(activeFilter);
     var data = await apiGet("/api/chat/conversations" + qs);
