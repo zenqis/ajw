@@ -254,20 +254,51 @@ async function syncConversationMessages(shopId, conversationId) {
 
 async function syncConversations(
   shopId,
-  { syncMessages = true, hotLimit = 12, pageSize = 50 } = {}
+  { syncMessages = true, hotLimit = 12, pageSize = 50, maxPages = 8 } = {}
 ) {
   const accessToken = await ensureAccessToken(shopId);
   const path = "/api/v2/sellerchat/get_conversation_list";
-  const ts = Math.floor(Date.now() / 1000);
-  const query = buildSignedQuery(path, ts, { accessToken, shopId });
-  const queryObj = Object.fromEntries(new URLSearchParams(query));
-  queryObj.direction = "latest";
-  queryObj.type = "all";
-  queryObj.page_size = String(Math.min(100, Math.max(10, Number(pageSize || 50))));
+  const allConversations = [];
+  const seenConversationIds = new Set();
+  let offset = 0;
+  let page = 0;
+  let keepPaging = true;
 
-  const data = await callShopee(path, "GET", { query: queryObj });
-  if (data.error) throw new Error(`${data.error}: ${data.message || "get_conversation_list gagal"}`);
-  const conversations = (data.response && data.response.conversations) || [];
+  while (keepPaging && page < Math.max(1, Number(maxPages || 1))) {
+    const ts = Math.floor(Date.now() / 1000);
+    const query = buildSignedQuery(path, ts, { accessToken, shopId });
+    const queryObj = Object.fromEntries(new URLSearchParams(query));
+    queryObj.direction = "latest";
+    queryObj.type = "all";
+    queryObj.page_size = String(Math.min(100, Math.max(10, Number(pageSize || 50))));
+    queryObj.offset = String(Math.max(0, Number(offset || 0)));
+
+    const data = await callShopee(path, "GET", { query: queryObj });
+    if (data.error) throw new Error(`${data.error}: ${data.message || "get_conversation_list gagal"}`);
+
+    const response = (data && data.response) || {};
+    const chunk = Array.isArray(response.conversations) ? response.conversations : [];
+    for (const conv of chunk) {
+      const id = String(conv && conv.conversation_id ? conv.conversation_id : "");
+      if (!id || seenConversationIds.has(id)) continue;
+      seenConversationIds.add(id);
+      allConversations.push(conv);
+    }
+
+    const nextOffset = Number(response.next_offset || response.offset || 0);
+    const hasNext =
+      Boolean(response.has_more || response.has_next_page) &&
+      Number.isFinite(nextOffset) &&
+      nextOffset > offset &&
+      chunk.length > 0;
+    keepPaging = hasNext;
+    offset = nextOffset;
+    page += 1;
+  }
+
+  const conversations = allConversations.sort(
+    (a, b) => Number(b.last_message_timestamp || 0) - Number(a.last_message_timestamp || 0)
+  );
 
   await upsertConversations(
     conversations.map((c) => ({
@@ -669,7 +700,7 @@ app.post("/api/shopee/live-push", jsonFromRaw, async (req, res) => {
       if (shopId && conversationId) {
         await syncConversationMessages(shopId, conversationId);
       } else if (shopId) {
-        await syncConversations(shopId, { syncMessages: false, pageSize: 100 });
+      await syncConversations(shopId, { syncMessages: false, pageSize: 100, maxPages: 5 });
       }
     })
     .catch((err) => {
@@ -684,7 +715,12 @@ app.post("/api/chat/sync", async (req, res) => {
     if (!shopId) throw new Error("shop_id wajib diisi");
     const synced = conversationId
       ? await syncConversationMessages(shopId, conversationId)
-      : await syncConversations(shopId, { syncMessages: true, hotLimit: 12, pageSize: 100 });
+      : await syncConversations(shopId, {
+          syncMessages: true,
+          hotLimit: 16,
+          pageSize: 100,
+          maxPages: 8
+        });
 
     let productsSynced = 0;
     let ordersSynced = 0;
@@ -714,7 +750,7 @@ app.post("/api/chat/realtime/poll", async (req, res) => {
     if (!shopId) throw new Error("shop_id wajib");
 
     // Always refresh conversation list so newest buyers bubble up immediately.
-    await syncConversations(shopId, { syncMessages: false, pageSize: 100 });
+    await syncConversations(shopId, { syncMessages: false, pageSize: 100, maxPages: 4 });
     if (conversationId) await syncConversationMessages(shopId, conversationId);
     try {
       const now = Date.now();
@@ -744,7 +780,7 @@ app.get("/api/chat/conversations", async (req, res) => {
     const sync = String(req.query.sync || "") === "1";
     if (sync && shopId) {
       try {
-        await syncConversations(shopId, { syncMessages: false, pageSize: 100 });
+        await syncConversations(shopId, { syncMessages: false, pageSize: 100, maxPages: 4 });
       } catch (err) {
         console.error("conversation sync warning:", err.message || err);
       }
