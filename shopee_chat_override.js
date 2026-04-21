@@ -22,6 +22,7 @@
   var aiLearningCache = [];
   var aiLearningStats = null;
   var aiBackendHealth = null;
+  var aiCredentialStatus = null;
   var aiLastRunAt = 0;
   var aiLastRunCount = 0;
   var aiLastRunProvider = "";
@@ -581,6 +582,19 @@
     }
   }
 
+  async function loadAiCredentialStatus() {
+    if (!currentShopId) {
+      aiCredentialStatus = null;
+      return;
+    }
+    try {
+      var data = await apiGet("/api/chat/ai/credentials/status?shop_id=" + encodeURIComponent(currentShopId));
+      aiCredentialStatus = data && data.row ? data.row : null;
+    } catch (_e) {
+      aiCredentialStatus = null;
+    }
+  }
+
   async function syncAll(refreshProducts) {
     currentShopId = selectedShopId();
     if (!currentShopId) throw new Error("shop_id wajib");
@@ -593,6 +607,7 @@
     await loadAiSettings();
     await loadAiLearning();
     await loadAiHealth();
+    await loadAiCredentialStatus();
     await loadProducts(!!refreshProducts);
   }
 
@@ -697,7 +712,7 @@
         currentShopId = String(el.getAttribute("data-shop-id") || "");
         selectedConversationId = "";
         window.localStorage.setItem("ajw_chat_shop_id", currentShopId);
-        Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings(), loadAiLearning(), loadAiHealth()]).then(function () {
+        Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings(), loadAiLearning(), loadAiHealth(), loadAiCredentialStatus()]).then(function () {
           if (selectedConversationId) {
             loadMessages().then(function () {
               Promise.all([loadOrders(false), loadAiDrafts()]).then(renderAll);
@@ -1332,6 +1347,17 @@
         '<button id="CHAT-AI-SAVE-SETTINGS" class="btns">Simpan Mode AI</button>' +
         '<button id="CHAT-AI-RUN-NOW" class="btnp">Run Sekarang</button>' +
         "</div>" +
+        '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-top:10px;align-items:end">' +
+        '<input id="CHAT-AI-KEY" class="fi" type="password" placeholder="Input API key provider terpilih (aman, disimpan di backend)">' +
+        '<input id="CHAT-AI-MODEL" class="fi" placeholder="Model (opsional, contoh gpt-4o-mini)" value="' + escSafe((aiSettings && aiSettings.model) || "") + '">' +
+        '<button id="CHAT-AI-SAVE-CRED" class="btns">Simpan Key</button>' +
+        "</div>" +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">' +
+        '<span class="ajw-chat-pill ' + ((aiCredentialStatus && aiCredentialStatus.openai_ready) ? "green" : "red") + '">OpenAI ' + ((aiCredentialStatus && aiCredentialStatus.openai_ready) ? "ready" : "not-ready") + "</span>" +
+        '<span class="ajw-chat-pill ' + ((aiCredentialStatus && aiCredentialStatus.claude_ready) ? "green" : "red") + '">Claude ' + ((aiCredentialStatus && aiCredentialStatus.claude_ready) ? "ready" : "not-ready") + "</span>" +
+        (aiCredentialStatus && aiCredentialStatus.openai_hint ? '<span class="ajw-chat-pill">OpenAI key: ' + escSafe(aiCredentialStatus.openai_hint) + '</span>' : '') +
+        (aiCredentialStatus && aiCredentialStatus.claude_hint ? '<span class="ajw-chat-pill">Claude key: ' + escSafe(aiCredentialStatus.claude_hint) + '</span>' : '') +
+        "</div>" +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">' +
         '<div style="font-size:12px;font-weight:800;color:var(--tx)">Core Prompt AI Chatbot</div>' +
         '<button id="CHAT-AI-USE-ANTON-PROMPT" class="btns">Isi Prompt Anton Pancing</button>' +
@@ -1666,6 +1692,7 @@
           ai_enabled: aiEnabled,
           require_approval: requireApproval,
           provider: provider,
+          model: String((document.getElementById("CHAT-AI-MODEL") || {}).value || "").trim(),
           prompt_preset: promptPreset
         })
           .then(function (d) {
@@ -1679,6 +1706,37 @@
           })
           .catch(function (err) {
             toast("Gagal simpan mode AI: " + (err.message || err), "error");
+          });
+      };
+    }
+
+    var aiSaveCredBtn = actionRoot.querySelector("#CHAT-AI-SAVE-CRED");
+    if (aiSaveCredBtn) {
+      aiSaveCredBtn.onclick = function () {
+        lastUserActionAt = Date.now();
+        if (!currentShopId) return toast("Pilih toko dulu.", "warn");
+        var provider = String((document.getElementById("CHAT-AI-PROVIDER") || {}).value || "openai");
+        var apiKey = String((document.getElementById("CHAT-AI-KEY") || {}).value || "").trim();
+        var model = String((document.getElementById("CHAT-AI-MODEL") || {}).value || "").trim();
+        if (!apiKey) return toast("Isi API key dulu.", "warn");
+        apiPost("/api/chat/ai/credentials", {
+          shop_id: currentShopId,
+          provider: provider,
+          api_key: apiKey,
+          model: model
+        })
+          .then(function () {
+            var keyBox = document.getElementById("CHAT-AI-KEY");
+            if (keyBox) keyBox.value = "";
+            return Promise.all([loadAiCredentialStatus(), loadAiSettings(), loadAiHealth()]);
+          })
+          .then(function () {
+            rerenderRepliesWorkspace();
+            renderHeaderState();
+            toast("API key tersimpan aman di backend.", "success");
+          })
+          .catch(function (err) {
+            toast("Gagal simpan API key: " + (err.message || err), "error");
           });
       };
     }
@@ -1828,9 +1886,9 @@
     var conv = currentConversation();
     var provider = aiSettings && aiSettings.provider ? String(aiSettings.provider) : "-";
     var providerReady = provider === "openai"
-      ? Boolean(aiBackendHealth && aiBackendHealth.openai_ready)
+      ? Boolean((aiCredentialStatus && aiCredentialStatus.openai_ready) || (aiBackendHealth && aiBackendHealth.openai_ready))
       : provider === "claude"
-      ? Boolean(aiBackendHealth && aiBackendHealth.claude_ready)
+      ? Boolean((aiCredentialStatus && aiCredentialStatus.claude_ready) || (aiBackendHealth && aiBackendHealth.claude_ready))
       : true;
     var runText = aiLastRunAt
       ? "AI run " + fmtTs(Math.floor(aiLastRunAt / 1000)) + " (" + aiLastRunCount + ")"
@@ -2173,7 +2231,7 @@
         selectedConversationId = "";
         Promise.all([loadConversations(), loadQuickReplies(), loadProducts(false)])
           .then(function () {
-            return Promise.all([loadKnowledge(), loadAiSettings(), loadAiLearning(), loadAiHealth()]);
+            return Promise.all([loadKnowledge(), loadAiSettings(), loadAiLearning(), loadAiHealth(), loadAiCredentialStatus()]);
           })
           .then(function () {
             renderAll();
@@ -2355,7 +2413,7 @@
         return loadConversations();
       })
       .then(function () {
-        return Promise.all([loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings(), loadAiLearning()]);
+        return Promise.all([loadQuickReplies(), loadProducts(false), loadKnowledge(), loadAiSettings(), loadAiLearning(), loadAiHealth(), loadAiCredentialStatus()]);
       })
       .then(function () {
         if (selectedConversationId) {

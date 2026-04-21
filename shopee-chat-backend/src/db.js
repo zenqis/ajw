@@ -36,7 +36,8 @@ function defaultState() {
     ai_knowledge: {},
     ai_settings: {},
     ai_drafts: {},
-    ai_learning: {}
+    ai_learning: {},
+    ai_secrets: {}
   };
 }
 
@@ -68,7 +69,8 @@ if (persistenceEnabled && fs.existsSync(absDbPath)) {
       ai_knowledge: parsed.ai_knowledge || {},
       ai_settings: parsed.ai_settings || {},
       ai_drafts: parsed.ai_drafts || {},
-      ai_learning: parsed.ai_learning || {}
+      ai_learning: parsed.ai_learning || {},
+      ai_secrets: parsed.ai_secrets || {}
     };
   } catch {
     state = defaultState();
@@ -683,6 +685,42 @@ export async function upsertAiLearningSample(row) {
     return clean;
   }
   state.ai_learning[clean.id] = clean;
+  persist();
+  return clean;
+}
+
+export async function getAiSecret(shopId, provider) {
+  const key = String(shopId || "");
+  const p = String(provider || "").toLowerCase();
+  if (!key || !p) return null;
+  if (useSupabase) {
+    const rows = await sbSelect("shopee_chat_ai_secrets", {
+      select: "*",
+      shop_id: `eq.${key}`,
+      provider: `eq.${p}`,
+      limit: 1
+    });
+    return rows && rows[0] ? rows[0] : null;
+  }
+  return state.ai_secrets[`${key}:${p}`] || null;
+}
+
+export async function upsertAiSecret(row) {
+  const shop = String(row.shop_id || "");
+  const provider = String(row.provider || "").toLowerCase();
+  const clean = {
+    id: String(row.id || `${shop}:${provider}`),
+    shop_id: shop,
+    provider,
+    encrypted_key: String(row.encrypted_key || ""),
+    key_hint: String(row.key_hint || ""),
+    updated_at: row.updated_at || nowIso()
+  };
+  if (useSupabase) {
+    await sbUpsert("shopee_chat_ai_secrets", [clean], "id");
+    return clean;
+  }
+  state.ai_secrets[`${clean.shop_id}:${clean.provider}`] = clean;
   persist();
   return clean;
 }

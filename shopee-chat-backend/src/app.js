@@ -1,4 +1,5 @@
 import "dotenv/config";
+import crypto from "node:crypto";
 import cors from "cors";
 import express from "express";
 
@@ -20,11 +21,13 @@ import {
   listAiDrafts,
   listAiLearningSamples,
   listAiKnowledge,
+  getAiSecret,
   listTokens,
   nowIso,
   upsertAiDraft,
   upsertAiLearningSample,
   updateAiDraft,
+  upsertAiSecret,
   upsertAiKnowledge,
   upsertAiSetting,
   updateConversationStats,
@@ -63,10 +66,43 @@ const anthropicKey = String(process.env.ANTHROPIC_API_KEY || "").trim();
 const anthropicModel = String(process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest").trim();
 const lastOrderSyncAt = new Map();
 const autonomousRunLock = new Map();
+const secretSeed = String(
+  process.env.AI_CREDENTIAL_SECRET ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_KEY ||
+    "ajw_local_secret_seed"
+);
+const encryptKey = crypto.createHash("sha256").update(secretSeed).digest();
 
 app.use(cors());
 app.use(express.json({ limit: "18mb" }));
 app.use(express.text({ type: "*/*", limit: "18mb" }));
+
+function encryptApiKey(plain) {
+  const text = String(plain || "").trim();
+  if (!text) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptKey, iv);
+  const enc = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return JSON.stringify({
+    iv: iv.toString("base64"),
+    tag: tag.toString("base64"),
+    data: enc.toString("base64")
+  });
+}
+
+function decryptApiKey(payload) {
+  const raw = String(payload || "").trim();
+  if (!raw) return "";
+  const parsed = JSON.parse(raw);
+  const iv = Buffer.from(String(parsed.iv || ""), "base64");
+  const tag = Buffer.from(String(parsed.tag || ""), "base64");
+  const data = Buffer.from(String(parsed.data || ""), "base64");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", encryptKey, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+}
 
 function jsonFromRaw(req, _res, next) {
   if (typeof req.body === "string") {
@@ -846,7 +882,30 @@ async function safeUpsertAiLearning(row) {
   }
 }
 
-async function requestOpenAiDraft({ incomingText, historyRows, knowledgeRows, preset }) {
+async function resolveProviderKeys(shopId) {
+  const openaiRow = await getAiSecret(shopId, "openai");
+  const claudeRow = await getAiSecret(shopId, "claude");
+  let openai = openAiKey;
+  let claude = anthropicKey;
+  try {
+    if (!openai && openaiRow && openaiRow.encrypted_key) openai = decryptApiKey(openaiRow.encrypted_key);
+  } catch (err) {
+    console.error("openai key decrypt warning:", err.message || err);
+  }
+  try {
+    if (!claude && claudeRow && claudeRow.encrypted_key) claude = decryptApiKey(claudeRow.encrypted_key);
+  } catch (err) {
+    console.error("claude key decrypt warning:", err.message || err);
+  }
+  return {
+    openai,
+    claude,
+    openai_hint: openaiRow ? String(openaiRow.key_hint || "") : "",
+    claude_hint: claudeRow ? String(claudeRow.key_hint || "") : ""
+  };
+}
+
+async function requestOpenAiDraft({ incomingText, historyRows, knowledgeRows, preset, apiKey, modelName }) {
   const prompt = [
     "Kamu CS marketplace Indonesia.",
     String(preset || ""),
@@ -857,7 +916,7 @@ async function requestOpenAiDraft({ incomingText, historyRows, knowledgeRows, pr
     .filter(Boolean)
     .join("\n");
   const payload = {
-    model: openAiModel,
+    model: modelName || openAiModel,
     temperature: 0.3,
     messages: [
       { role: "system", content: prompt },
@@ -876,7 +935,7 @@ async function requestOpenAiDraft({ incomingText, historyRows, knowledgeRows, pr
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${openAiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify(payload)
@@ -888,7 +947,7 @@ async function requestOpenAiDraft({ incomingText, historyRows, knowledgeRows, pr
   return String(json?.choices?.[0]?.message?.content || "").trim();
 }
 
-async function requestClaudeDraft({ incomingText, historyRows, knowledgeRows, preset }) {
+async function requestClaudeDraft({ incomingText, historyRows, knowledgeRows, preset, apiKey, modelName }) {
   const msg =
     "Pesan pembeli:\n" +
     String(incomingText || "") +
@@ -900,12 +959,12 @@ async function requestClaudeDraft({ incomingText, historyRows, knowledgeRows, pr
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
-      "x-api-key": anthropicKey,
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
       "content-type": "application/json"
     },
     body: JSON.stringify({
-      model: anthropicModel,
+      model: modelName || anthropicModel,
       max_tokens: 500,
       temperature: 0.3,
       system: String(preset || "Kamu CS marketplace Indonesia."),
@@ -924,6 +983,9 @@ async function requestClaudeDraft({ incomingText, historyRows, knowledgeRows, pr
 
 async function generateAiDraft({ shopId, conversationId, incomingText }) {
   const settings = (await getAiSetting(shopId)) || defaultAiSetting(shopId);
+  const keys = await resolveProviderKeys(shopId);
+  const openAiKeyRun = String(keys.openai || "").trim();
+  const anthropicKeyRun = String(keys.claude || "").trim();
   const historyRaw = await listMessages(conversationId, 20, "desc");
   const historyRows = historyRaw
     .slice(0, 10)
@@ -975,12 +1037,14 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
     source: l.source
   }));
 
-  if (provider === "openai" && openAiKey) {
+  if (provider === "openai" && openAiKeyRun) {
     try {
       text = await requestOpenAiDraft({
         incomingText,
         historyRows,
         knowledgeRows: selectedKnowledge,
+        apiKey: openAiKeyRun,
+        modelName: String(settings.model || openAiModel),
         preset:
           String(settings.prompt_preset || "") +
           "\nKonteks order: " +
@@ -994,12 +1058,14 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
       provider = "smart";
       fallbackReason = "openai_error";
     }
-  } else if ((provider === "claude" || provider === "anthropic") && anthropicKey) {
+  } else if ((provider === "claude" || provider === "anthropic") && anthropicKeyRun) {
     try {
       text = await requestClaudeDraft({
         incomingText,
         historyRows,
         knowledgeRows: selectedKnowledge,
+        apiKey: anthropicKeyRun,
+        modelName: String(settings.model || anthropicModel),
         preset:
           String(settings.prompt_preset || "") +
           "\nKonteks order: " +
@@ -1013,10 +1079,10 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
       provider = "smart";
       fallbackReason = "claude_error";
     }
-  } else if (provider === "openai" && !openAiKey) {
+  } else if (provider === "openai" && !openAiKeyRun) {
     provider = "smart";
     fallbackReason = "openai_key_missing";
-  } else if ((provider === "claude" || provider === "anthropic") && !anthropicKey) {
+  } else if ((provider === "claude" || provider === "anthropic") && !anthropicKeyRun) {
     provider = "smart";
     fallbackReason = "claude_key_missing";
   }
@@ -1040,7 +1106,13 @@ async function generateAiDraft({ shopId, conversationId, incomingText }) {
   return {
     text: String(text || "").slice(0, 1600),
     provider,
-    model: model || (provider === "openai" ? openAiModel : provider === "claude" ? anthropicModel : "rule-engine"),
+    model:
+      model ||
+      (provider === "openai"
+        ? String(settings.model || openAiModel)
+        : provider === "claude"
+        ? String(settings.model || anthropicModel)
+        : "rule-engine"),
     refs: selectedKnowledge.map((k) => ({ id: k.id, keyword: k.keyword, group: k.group })),
     learning_refs: selectedLearning.map((l) => ({ id: l.id, customer_text: l.customer_text, source: l.source }))
   };
@@ -1542,6 +1614,63 @@ app.get("/api/chat/ai/settings", async (req, res) => {
     if (!shopId) throw new Error("shop_id wajib");
     const row = (await getAiSetting(shopId)) || defaultAiSetting(shopId);
     res.json({ ok: true, row });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.get("/api/chat/ai/credentials/status", async (req, res) => {
+  try {
+    const shopId = String(req.query.shop_id || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    const keys = await resolveProviderKeys(shopId);
+    res.json({
+      ok: true,
+      row: {
+        shop_id: shopId,
+        openai_ready: Boolean(String(keys.openai || "").trim()),
+        claude_ready: Boolean(String(keys.claude || "").trim()),
+        openai_hint: keys.openai_hint || "",
+        claude_hint: keys.claude_hint || ""
+      }
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
+app.post("/api/chat/ai/credentials", async (req, res) => {
+  try {
+    const shopId = String(req.body.shop_id || "").trim();
+    const provider = String(req.body.provider || "").trim().toLowerCase();
+    const apiKey = String(req.body.api_key || "").trim();
+    const model = String(req.body.model || "").trim();
+    if (!shopId) throw new Error("shop_id wajib");
+    if (!provider || !["openai", "claude"].includes(provider)) throw new Error("provider wajib: openai/claude");
+    if (!apiKey) throw new Error("api_key wajib");
+
+    const enc = encryptApiKey(apiKey);
+    const keyHint = apiKey.length >= 8 ? `${apiKey.slice(0, 3)}...${apiKey.slice(-4)}` : "***";
+    const row = await upsertAiSecret({
+      shop_id: shopId,
+      provider,
+      encrypted_key: enc,
+      key_hint: keyHint,
+      updated_at: nowIso()
+    });
+
+    if (model) {
+      const settings = (await getAiSetting(shopId)) || defaultAiSetting(shopId);
+      await upsertAiSetting({
+        ...settings,
+        shop_id: shopId,
+        provider,
+        model,
+        updated_at: nowIso()
+      });
+    }
+
+    res.json({ ok: true, row: { shop_id: shopId, provider, key_hint: keyHint } });
   } catch (err) {
     res.status(400).json({ ok: false, error: String(err.message || err) });
   }

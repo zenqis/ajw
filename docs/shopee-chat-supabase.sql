@@ -163,6 +163,18 @@ create table if not exists public.shopee_chat_ai_learning (
 create index if not exists idx_shopee_chat_ai_learning_shop_updated
 on public.shopee_chat_ai_learning (shop_id, updated_at desc);
 
+create table if not exists public.shopee_chat_ai_secrets (
+  id text primary key,
+  shop_id text not null,
+  provider text not null,
+  encrypted_key text not null,
+  key_hint text default '',
+  updated_at timestamptz default now()
+);
+
+create unique index if not exists idx_shopee_chat_ai_secrets_shop_provider
+on public.shopee_chat_ai_secrets (shop_id, provider);
+
 alter table public.shopee_chat_tokens enable row level security;
 alter table public.shopee_chat_conversations enable row level security;
 alter table public.shopee_chat_messages enable row level security;
@@ -174,6 +186,7 @@ alter table public.shopee_chat_ai_knowledge enable row level security;
 alter table public.shopee_chat_ai_settings enable row level security;
 alter table public.shopee_chat_ai_drafts enable row level security;
 alter table public.shopee_chat_ai_learning enable row level security;
+alter table public.shopee_chat_ai_secrets enable row level security;
 
 drop policy if exists shopee_chat_tokens_open on public.shopee_chat_tokens;
 drop policy if exists shopee_chat_conversations_open on public.shopee_chat_conversations;
@@ -186,6 +199,7 @@ drop policy if exists shopee_chat_ai_knowledge_open on public.shopee_chat_ai_kno
 drop policy if exists shopee_chat_ai_settings_open on public.shopee_chat_ai_settings;
 drop policy if exists shopee_chat_ai_drafts_open on public.shopee_chat_ai_drafts;
 drop policy if exists shopee_chat_ai_learning_open on public.shopee_chat_ai_learning;
+drop policy if exists shopee_chat_ai_secrets_open on public.shopee_chat_ai_secrets;
 
 create policy shopee_chat_tokens_open on public.shopee_chat_tokens for all using (true) with check (true);
 create policy shopee_chat_conversations_open on public.shopee_chat_conversations for all using (true) with check (true);
@@ -198,6 +212,7 @@ create policy shopee_chat_ai_knowledge_open on public.shopee_chat_ai_knowledge f
 create policy shopee_chat_ai_settings_open on public.shopee_chat_ai_settings for all using (true) with check (true);
 create policy shopee_chat_ai_drafts_open on public.shopee_chat_ai_drafts for all using (true) with check (true);
 create policy shopee_chat_ai_learning_open on public.shopee_chat_ai_learning for all using (true) with check (true);
+create policy shopee_chat_ai_secrets_open on public.shopee_chat_ai_secrets for all using (true) with check (true);
 
 insert into storage.buckets (id, name, public)
 values ('chat-media', 'chat-media', true)
