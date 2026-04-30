@@ -27,6 +27,8 @@
     'Live Agent',
     'General'
   ];
+  var SIM_CONV_ID = '__SIMULASI__';
+  var SIM_BUYER_ID = '__SIM_BUYER__';
 
   /* ---------- 1. LocalStorage helpers (hanya untuk setting lokal) ---------- */
   var LS = {
@@ -73,7 +75,15 @@
     lastConvSig: '',
     lastMsgSig: '',
     pollCycle: 0,
-    pollTimer: null
+    pollTimer: null,
+    modal: null,               /* knowledge|ai|lab */
+    autoDraftSigByConv: {},
+    simulationEnabled: LS.get('simulationEnabled', true),
+    simulationAutoAdapt: LS.get('simulationAutoAdapt', false),
+    simulationMessages: LS.get('simulationMessages', []),
+    simulationAutoReply: LS.get('simulationAutoReply', true),
+    composeDraftByConv: LS.get('composeDraftByConv', {}),
+    aiSettingsLocal: LS.get('aiSettingsLocal', null)
   };
 
   /* ---------- 3. HTTP helper ---------- */
@@ -121,7 +131,8 @@
   function injectCSS(){
     if (document.getElementById('CSAUTO-CSS')) return;
     var css = [
-      '.cs-wrap{display:flex;flex-direction:column;height:calc(100vh - 120px);min-height:500px;gap:8px;font-family:Arial,sans-serif;color:#f4f7ff!important}',
+      '#V-csauto{width:100%!important;max-width:none!important;margin:0!important;padding:0!important}',
+      '.cs-wrap{display:flex;flex-direction:column;height:calc(100vh - 120px);min-height:500px;gap:8px;font-family:Arial,sans-serif;color:#f4f7ff!important;width:100%!important;max-width:none!important}',
       '.cs-top{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:#111723;border:1px solid #2b3345;border-radius:8px}',
       '.cs-top input,.cs-top select{padding:5px 8px;border:1px solid #3a455e;border-radius:5px;font:12px Arial;background:#0f1523;color:#f4f7ff!important}',
       '.cs-top input::placeholder,.cs-top textarea::placeholder{color:#9aa7c5}',
@@ -159,6 +170,9 @@
       '.cs-msgs .cs-msg .cs-mt{font:10px Arial;opacity:.8;margin-top:4px;color:rgba(255,255,255,.72)}',
       '.cs-comp{border-top:1px solid #2b3345;padding:7px 9px;display:flex;flex-direction:column;gap:5px;background:#161f30}',
       '.cs-comp .cs-row{display:flex;gap:5px;align-items:center;flex-wrap:wrap}',
+      '.cs-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}',
+      '.cs-tools .cs-tool{padding:3px 7px;border:1px solid #3a4764;background:#121b2d;color:#dce8ff;border-radius:6px;cursor:pointer;font:11px Arial}',
+      '.cs-tools .cs-tool:hover{background:#1a2740}',
       '.cs-comp textarea{flex:1;min-height:44px;max-height:140px;padding:6px 9px;border:1px solid #3a455e;border-radius:6px;font:12px Arial;background:#0f1523;color:#f5f8ff!important;resize:vertical}',
       '.cs-draft{background:#FFF8E1;border:1px solid #FFC107;border-radius:6px;padding:7px 9px;font:12px Arial;color:#3E2723;display:flex;flex-direction:column;gap:5px}',
       '.cs-draft b{color:#E65100}',
@@ -186,7 +200,12 @@
       '.cs-pill.err{background:#FFCDD2;color:#C62828}',
       '.cs-link{color:#7fb1ff;cursor:pointer;text-decoration:underline;font-size:11px}',
       '.cs-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#bbb;margin-right:4px}',
-      '.cs-dot.on{background:#4CAF50;box-shadow:0 0 4px #4CAF50}'
+      '.cs-dot.on{background:#4CAF50;box-shadow:0 0 4px #4CAF50}',
+      '.cs-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99990;display:flex;align-items:center;justify-content:center;padding:18px}',
+      '.cs-modal{width:min(1100px,96vw);max-height:90vh;overflow:auto;background:#121a29;border:1px solid #2f3b55;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.45)}',
+      '.cs-modal-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #2f3b55;background:#1a2234;color:#f3f7ff;font:bold 13px Arial}',
+      '.cs-modal-body{padding:10px 12px}',
+      '.cs-modal-close{background:#263146;border:1px solid #435373;color:#f3f7ff;border-radius:6px;padding:4px 10px;cursor:pointer;font:12px Arial}'
     ].join('\n');
     var st = document.createElement('style');
     st.id = 'CSAUTO-CSS';
@@ -335,6 +354,62 @@
     return null;
   }
 
+  function isSimulationConv(id){
+    return String(id || '') === SIM_CONV_ID;
+  }
+
+  function buildSimulationConversation(){
+    var msgs = Array.isArray(S.simulationMessages) ? S.simulationMessages : [];
+    var last = msgs.length ? msgs[msgs.length - 1] : null;
+    var preview = last ? extractMessageText(last) : 'Mode simulasi buyer. Ketik di kolom chat untuk uji AI.';
+    var ts = last ? (last.created_timestamp || last.timestamp || last.created_at) : Date.now();
+    return {
+      conversation_id: SIM_CONV_ID,
+      id: SIM_CONV_ID,
+      to_name: 'SIMULASI',
+      to_id: SIM_BUYER_ID,
+      unread_count: 0,
+      latest_message_text: preview,
+      last_preview: preview,
+      last_message_timestamp: ts,
+      updated_at: ts,
+      simulation: true
+    };
+  }
+
+  function currentDraftKey(){
+    return String(S.activeConvId || '__global__');
+  }
+
+  function getDraftText(){
+    var key = currentDraftKey();
+    return String((S.composeDraftByConv && S.composeDraftByConv[key]) || '');
+  }
+
+  function setDraftText(v){
+    var key = currentDraftKey();
+    if (!S.composeDraftByConv || typeof S.composeDraftByConv !== 'object') S.composeDraftByConv = {};
+    S.composeDraftByConv[key] = String(v || '');
+    LS.set('composeDraftByConv', S.composeDraftByConv);
+  }
+
+  function isSellerMessage(m){
+    if (!m) return false;
+    if (m.source === 'ai' || m.by_ai) return true;
+    if (String(m.from_id || '') === SIM_BUYER_ID) return false;
+    var fromShop = m.from_shop_id != null ? String(m.from_shop_id) : '';
+    if (fromShop) return fromShop === String(S.shopId || '');
+    var fromId = m.from_id != null ? String(m.from_id) : '';
+    if (!fromId) return false;
+    if (fromId === String(S.shopId || '')) return true;
+    if (m.sender_type === 'shop' || m.from_type === 'shop' || m.is_outgoing === true) return true;
+    if (m.sender_type === 'buyer' || m.from_type === 'buyer' || m.is_outgoing === false) return false;
+    var conv = activeConversationRow();
+    var buyerId = conv ? String(conv.to_id || conv.buyer_user_id || conv.user_id || '') : '';
+    if (buyerId) return fromId !== buyerId;
+    return false;
+  }
+
   function pickList(payload){
     if (!payload) return [];
     if (Array.isArray(payload)) return payload;
@@ -369,7 +444,7 @@
   /* ---------- 7. API wrappers ---------- */
   var API = {
     conversations: function(){
-      return api('/api/chat/conversations?shop_id='+encodeURIComponent(S.shopId)+'&filter='+encodeURIComponent(S.filter)+'&limit=120&sync=1');
+      return api('/api/chat/conversations?shop_id='+encodeURIComponent(S.shopId)+'&filter='+encodeURIComponent(S.filter)+'&limit=100&sync=1');
     },
     messages: function(cid){
       return api('/api/chat/messages?conversation_id='+encodeURIComponent(cid)+'&shop_id='+encodeURIComponent(S.shopId)+'&limit=200&order=asc');
@@ -401,7 +476,20 @@
     aiCredStatus: function(){ return api('/api/chat/ai/credentials/status?shop_id='+encodeURIComponent(S.shopId)); },
     aiCredSet: function(p){ return api('/api/chat/ai/credentials', { body: Object.assign({ shop_id:S.shopId }, p) }); },
     aiDraft: function(cid, history){
-      return api('/api/chat/ai/draft', { body: { conversation_id: cid, shop_id: S.shopId, message_history: history || [] } });
+      var singlePrompt = (S.aiSettings && (S.aiSettings.core_prompt || S.aiSettings.prompt_preset)) || LS.get('aiCorePrompt', '');
+      return api('/api/chat/ai/draft', {
+        body: {
+          conversation_id: cid,
+          shop_id: S.shopId,
+          message_history: history || [],
+          provider: (S.aiSettings && S.aiSettings.provider) || 'openai',
+          model: (S.aiSettings && S.aiSettings.model) || 'gpt-4o-mini',
+          prompt_preset: singlePrompt,
+          core_prompt: singlePrompt,
+          use_knowledge: false,
+          use_learning: false
+        }
+      });
     },
     aiDrafts: function(){ return api('/api/chat/ai/drafts?shop_id='+encodeURIComponent(S.shopId)); },
     aiApprove: function(cid, draft_id, text){ return api('/api/chat/ai/approve-send', { body: { conversation_id: cid, shop_id:S.shopId, draft_id: draft_id, text: text } }); },
@@ -418,6 +506,10 @@
       var v = document.createElement('div');
       v.id = 'V-csauto';
       v.style.display = 'none';
+      v.style.width = '100%';
+      v.style.maxWidth = 'none';
+      v.style.margin = '0';
+      v.style.padding = '0';
       bodyHost.appendChild(v);
     }
     return document.getElementById('V-csauto');
@@ -459,6 +551,24 @@
     ensureCSAutoTabButton();
   }
 
+  function isCSAutoActive(){
+    if (String(window._activeTab || '') === 'csauto') return true;
+    var btn = document.querySelector('#TABS [data-ajw-csauto="1"]');
+    if (btn && /\bact\b/.test(btn.className || '')) return true;
+    return false;
+  }
+
+  function enforceCSAutoVisibility(){
+    var mount = document.getElementById('V-csauto');
+    if (!mount) return;
+    if (isCSAutoActive()){
+      mount.style.display = 'block';
+    } else {
+      mount.style.display = 'none';
+      stopPolling();
+    }
+  }
+
   /* ---------- 9. Top bar render ---------- */
   function renderTop(){
     var realtimeDot = '<span class="cs-dot'+(S.realtime?' on':'')+'"></span>';
@@ -477,6 +587,11 @@
         '<button class="cs-btn" id="cs-sync">Sync Shopee</button>'+
         '<button class="cs-btn y" id="cs-refresh">Refresh</button>'+
         '<button class="cs-btn o" id="cs-rt">'+realtimeDot+'Realtime: '+(S.realtime?'ON':'OFF')+'</button>'+
+        '<button class="cs-btn y" id="cs-open-knowledge">Pusat Informasi</button>'+
+        '<button class="cs-btn y" id="cs-open-ai">Mode AI</button>'+
+        '<button class="cs-btn y" id="cs-open-lab">Lab AI</button>'+
+        '<label style="display:inline-flex;align-items:center;gap:4px;font:11px Arial;color:#cfe1ff"><input type="checkbox" id="cs-sim-enabled"'+(S.simulationEnabled?' checked':'')+'> Simulasi</label>'+
+        '<label style="display:inline-flex;align-items:center;gap:4px;font:11px Arial;color:#cfe1ff"><input type="checkbox" id="cs-sim-adapt"'+(S.simulationAutoAdapt?' checked':'')+'> Adaptif</label>'+
         '<span class="lbl">Mode</span>'+
         '<select id="cs-mode">'+
           '<option value="auto"'+(S.mode==='auto'?' selected':'')+'>AUTO (kirim otomatis)</option>'+
@@ -500,11 +615,50 @@
     };
     $('#cs-refresh').onclick = function(){ loadAll(); };
     $('#cs-rt').onclick = function(){ S.realtime = !S.realtime; LS.set('realtime', S.realtime); render(); if (S.realtime) startPolling(); else stopPolling(); };
+    var openKnowledge = $('#cs-open-knowledge');
+    if (openKnowledge) openKnowledge.onclick = function(){ S.modal = 'knowledge'; loadKnowledge().finally(function(){ render(); }); };
+    var openAI = $('#cs-open-ai');
+    if (openAI) openAI.onclick = function(){ S.modal = 'ai'; Promise.all([loadAISettings(), loadAICredStatus()]).finally(function(){ render(); }); };
+    var openLab = $('#cs-open-lab');
+    if (openLab) openLab.onclick = function(){ S.modal = 'lab'; loadLearning().finally(function(){ render(); }); };
+    var simEnabled = $('#cs-sim-enabled');
+    if (simEnabled) simEnabled.onchange = function(){
+      S.simulationEnabled = !!this.checked;
+      LS.set('simulationEnabled', S.simulationEnabled);
+      if (S.simulationEnabled){
+        if (!S.activeConvId) S.activeConvId = SIM_CONV_ID;
+      } else if (S.activeConvId === SIM_CONV_ID){
+        S.activeConvId = null;
+      }
+      render();
+      loadConversations();
+    };
+    var simAdapt = $('#cs-sim-adapt');
+    if (simAdapt) simAdapt.onchange = function(){
+      S.simulationAutoAdapt = !!this.checked;
+      LS.set('simulationAutoAdapt', S.simulationAutoAdapt);
+      toast('Mode adaptif simulasi: '+(S.simulationAutoAdapt?'ON':'OFF'), 'ok');
+    };
     $('#cs-mode').onchange = function(){
       S.mode = this.value; LS.set('mode', S.mode);
-      if (S.aiSettings){
-        API.aiSettingsSet({ ai_enabled: (S.mode!=='manual'), require_approval: (S.mode==='approval'), provider: S.aiSettings.provider, prompt_preset: S.aiSettings.prompt_preset }).then(function(r){ S.aiSettings = r && (r.settings||r) || S.aiSettings; toast('Mode AI: '+S.mode,'ok'); if (S.sideTab==='ai') renderSide(); }).catch(function(e){ toast('Gagal set mode: '+e.message,'err'); });
+      if (S.mode === 'approval' && !S.realtime){
+        S.realtime = true;
+        LS.set('realtime', true);
       }
+      if (S.aiSettings){
+        API.aiSettingsSet({
+          ai_enabled: (S.mode !== 'manual'),
+          require_approval: (S.mode === 'approval'),
+          provider: S.aiSettings.provider,
+          prompt_preset: S.aiSettings.prompt_preset,
+          core_prompt: S.aiSettings.core_prompt || LS.get('aiCorePrompt', '')
+        }).then(function(r){
+          S.aiSettings = r && (r.settings||r) || S.aiSettings;
+          toast('Mode AI: '+S.mode,'ok');
+        }).catch(function(e){ toast('Gagal set mode: '+e.message,'err'); });
+      }
+      render();
+      if (S.realtime) startPolling();
     };
     $('#cs-run-auto').onclick = function(){
       this.disabled = true; this.textContent = 'Running...';
@@ -531,7 +685,7 @@
       html += '<div class="cs-item'+active+'" data-id="'+esc(id)+'">'+
         '<div class="cs-ava">'+(avatar?'<img src="'+esc(avatar)+'" onerror="this.replaceWith(document.createTextNode(\''+initials(name)+'\'))">':esc(initials(name)))+'</div>'+
         '<div class="cs-inf">'+
-          '<div class="cs-nm"><span>'+esc(name)+(unread?'<span class="cs-badge">'+unread+'</span>':'')+'</span><span class="cs-tm">'+esc(fmtTime(ts))+'</span></div>'+
+          '<div class="cs-nm"><span>'+esc(name)+(c.simulation?'<span class="cs-badge" style="background:#0D47A1">SIM</span>':'')+(unread?'<span class="cs-badge">'+unread+'</span>':'')+'</span><span class="cs-tm">'+esc(fmtTime(ts))+'</span></div>'+
           '<div class="cs-pv">'+esc(String(preview).slice(0,100))+'</div>'+
         '</div>'+
       '</div>';
@@ -552,16 +706,24 @@
   function renderMessages(){
     if (!S.activeConvId) return '<div class="cs-empty" style="margin:auto">Pilih percakapan untuk melihat pesan.</div>';
     if (S.loadingMsgs) return '<div class="cs-empty">Memuat pesan...</div>';
+    if (isSimulationConv(S.activeConvId)){
+      if (!Array.isArray(S.simulationMessages) || !S.simulationMessages.length){
+        return '<div class="cs-empty">Room SIMULASI aktif. Ketik pesan di bawah untuk mensimulasikan buyer.</div>';
+      }
+      var simHtml = '';
+      for (var si = 0; si < S.simulationMessages.length; si++){
+        var sm = S.simulationMessages[si];
+        var sIsSeller = isSellerMessage(sm);
+        var sCls = sIsSeller ? (sm.by_ai ? 'ai' : 'out') : 'inc';
+        simHtml += '<div class="cs-msg '+sCls+'">'+esc(extractMessageText(sm))+'<div class="cs-mt">'+esc(fmtTime(sm.created_timestamp || sm.timestamp || sm.created_at))+(sm.by_ai?' • AI':'')+'</div></div>';
+      }
+      return simHtml;
+    }
     if (!S.messages.length) return '<div class="cs-empty">Belum ada pesan.</div>';
     var html = '';
     for (var i=0; i<S.messages.length; i++){
       var m = S.messages[i];
-      var fromShop = m.from_shop_id != null ? String(m.from_shop_id) : '';
-      var fromId = m.from_id != null ? String(m.from_id) : '';
-      var sellerId = String(S.shopId || '');
-      var isSeller = false;
-      if (fromShop) isSeller = fromShop === sellerId;
-      else if (fromId) isSeller = fromId === sellerId;
+      var isSeller = isSellerMessage(m);
       var inc = !isSeller;
       var cls = inc ? 'inc' : (m.source === 'ai' || m.by_ai ? 'ai' : 'out');
       var text = extractMessageText(m);
@@ -579,7 +741,7 @@
     var avatar = conv && (conv.to_avatar || conv.avatar);
     return '<div class="cs-chat-hdr">'+
       '<div class="cs-ava">'+(avatar?'<img src="'+esc(avatar)+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.replaceWith(document.createTextNode(\''+initials(name)+'\'))">':esc(initials(name)))+'</div>'+
-      '<div style="flex:1"><div style="font:bold 13px Arial">'+esc(name)+'</div><div style="font:10px Arial;color:#888">ID: '+esc(S.activeConvId)+'</div></div>'+
+      '<div style="flex:1"><div style="font:bold 13px Arial">'+esc(name)+(isSimulationConv(S.activeConvId)?' <span class="cs-pill warn">SIMULASI BUYER</span>':'')+'</div><div style="font:10px Arial;color:#888">ID: '+esc(S.activeConvId)+'</div></div>'+
       '<button class="cs-btn sm y" id="cs-draft-btn">Minta Draft AI</button>'+
     '</div>';
   }
@@ -597,7 +759,17 @@
     }
     return '<div class="cs-comp">'+
       draftHtml+
-      '<div class="cs-row"><textarea id="cs-input" placeholder="Tulis balasan..."></textarea></div>'+
+      '<div class="cs-tools">'+
+        '<button class="cs-tool" id="cs-tool-emoji">😊</button>'+
+        '<button class="cs-tool" id="cs-tool-image">🖼 Gambar</button>'+
+        '<button class="cs-tool" id="cs-tool-video">🎬 Video</button>'+
+        '<button class="cs-tool" id="cs-tool-translate">Terjemahkan</button>'+
+        '<button class="cs-tool" id="cs-tool-ai-auto">AI Auto Balas</button>'+
+        '<button class="cs-tool" id="cs-tool-quick">Balasan Cepat</button>'+
+        '<input id="cs-upload-image" type="file" accept="image/*" style="display:none">'+
+        '<input id="cs-upload-video" type="file" accept="video/*" style="display:none">'+
+      '</div>'+
+      '<div class="cs-row"><textarea id="cs-input" placeholder="Tulis balasan...">'+esc(getDraftText())+'</textarea></div>'+
       '<div class="cs-row">'+
         '<button class="cs-btn" id="cs-send">Kirim</button>'+
         '<button class="cs-btn y sm" id="cs-qr-pick">Balasan Cepat</button>'+
@@ -615,6 +787,7 @@
     var ta = $('#cs-input');
     if (ta){
       ta.addEventListener('keydown', function(e){ if ((e.ctrlKey||e.metaKey) && e.key === 'Enter') sendReply(); });
+      ta.addEventListener('input', function(){ setDraftText(ta.value || ''); });
     }
     var qb = $('#cs-qr-pick');
     if (qb){
@@ -627,11 +800,51 @@
     if (db){
       db.onclick = function(){ requestDraft(); };
     }
+    var toolQuick = $('#cs-tool-quick');
+    if (toolQuick) toolQuick.onclick = function(){ if (qb) qb.click(); };
+    var toolEmoji = $('#cs-tool-emoji');
+    if (toolEmoji) toolEmoji.onclick = function(){ insertToInput('😊'); };
+    var upImg = $('#cs-upload-image');
+    var toolImage = $('#cs-tool-image');
+    if (toolImage && upImg) {
+      toolImage.onclick = function(){ upImg.click(); };
+      upImg.onchange = function(){
+        var f = this.files && this.files[0];
+        if (!f) return;
+        insertToInput('[Gambar lokal] ' + f.name);
+        this.value = '';
+      };
+    }
+    var upVid = $('#cs-upload-video');
+    var toolVideo = $('#cs-tool-video');
+    if (toolVideo && upVid){
+      toolVideo.onclick = function(){ upVid.click(); };
+      upVid.onchange = function(){
+        var f = this.files && this.files[0];
+        if (!f) return;
+        insertToInput('[Video lokal] ' + f.name);
+        this.value = '';
+      };
+    }
+    var toolTranslate = $('#cs-tool-translate');
+    if (toolTranslate){
+      toolTranslate.onclick = function(){
+        var t = $('#cs-input');
+        if (!t) return;
+        var v = String(t.value || '').trim();
+        if (!v) return toast('Tulis teks dulu', 'err');
+        t.value = '[Terjemahan draft]\n' + v;
+      };
+    }
+    var toolAiAuto = $('#cs-tool-ai-auto');
+    if (toolAiAuto){
+      toolAiAuto.onclick = function(){ requestDraft(); };
+    }
     if (S.aiDraftCurrent){
       var dSend = $('#cs-draft-send');
       if (dSend) dSend.onclick = function(){ approveDraft(); };
       var dEdit = $('#cs-draft-edit');
-      if (dEdit) dEdit.onclick = function(){ var t = $('#cs-input'); if(t){ t.value = S.aiDraftCurrent.text || ''; t.focus(); } S.aiDraftCurrent = null; renderMiddleOnly(); };
+      if (dEdit) dEdit.onclick = function(){ var t = $('#cs-input'); if(t){ t.value = S.aiDraftCurrent.text || ''; setDraftText(t.value); t.focus(); } S.aiDraftCurrent = null; renderMiddleOnly(); };
       var dRej = $('#cs-draft-reject');
       if (dRej) dRej.onclick = function(){ S.aiDraftCurrent = null; renderMiddleOnly(); };
     }
@@ -642,10 +855,7 @@
     var tabs = [
       ['orders','Pesanan'],
       ['products','Rincian Produk'],
-      ['quick','Balasan Cepat'],
-      ['knowledge','Pusat Informasi'],
-      ['ai','Mode AI'],
-      ['lab','Lab AI']
+      ['quick','Balasan Cepat']
     ];
     var html = '<div class="cs-tabbar">';
     for (var i=0; i<tabs.length; i++){
@@ -660,10 +870,7 @@
       case 'orders': return renderOrders();
       case 'products': return renderProducts();
       case 'quick': return renderQuick();
-      case 'knowledge': return renderKnowledge();
-      case 'ai': return renderAIPanel();
-      case 'lab': return renderLab();
-      default: return '';
+      default: return '<div class="cs-empty">Pilih panel kanan.</div>';
     }
   }
 
@@ -799,7 +1006,9 @@
   function renderAIPanel(){
     var s = S.aiSettings || {};
     var cred = S.aiCredStatus || {};
-    var credPill = cred.configured ? '<span class="cs-pill ok">Konfigurasi OK</span>' : '<span class="cs-pill err">Belum di-set</span>';
+    var corePrompt = s.core_prompt || s.system_prompt || LS.get('aiCorePrompt', '');
+    var credConfigured = Boolean(cred.configured || cred.openai_ready || cred.claude_ready);
+    var credPill = credConfigured ? '<span class="cs-pill ok">Konfigurasi OK</span>' : '<span class="cs-pill err">Belum di-set</span>';
     var presets = [
       ['default','Default (ramah, tegas)'],
       ['friendly','Ramah & cepat'],
@@ -811,7 +1020,7 @@
     for (var i=0; i<presets.length; i++){
       presetOpt += '<option value="'+presets[i][0]+'"'+(s.prompt_preset===presets[i][0]?' selected':'')+'>'+presets[i][1]+'</option>';
     }
-    var providers = ['openai','anthropic','gemini'];
+    var providers = ['smart','openai','claude'];
     var provOpt = '';
     for (var j=0; j<providers.length; j++){
       provOpt += '<option value="'+providers[j]+'"'+(s.provider===providers[j]?' selected':'')+'>'+providers[j]+'</option>';
@@ -823,13 +1032,16 @@
         '<div>AI aktif: '+(s.ai_enabled?'<span class="cs-pill ok">Ya</span>':'<span class="cs-pill">Tidak</span>')+'</div>'+
         '<div>Butuh approval: '+(s.require_approval?'<span class="cs-pill warn">Ya</span>':'<span class="cs-pill">Tidak</span>')+'</div>'+
         '<div>Provider: '+esc(s.provider||'-')+' '+credPill+'</div>'+
+        '<div>Model: <span class="cs-pill">'+esc(s.model || cred.model || 'gpt-4o-mini')+'</span></div>'+
       '</div>'+
       '<div class="cs-form">'+
         '<b style="font:bold 11px Arial;color:#f4f7ff">Pengaturan AI</b>'+
         '<label style="font:11px Arial"><input type="checkbox" id="ai-enabled"'+(s.ai_enabled?' checked':'')+'> AI Aktif</label>'+
         '<label style="font:11px Arial"><input type="checkbox" id="ai-approval"'+(s.require_approval?' checked':'')+'> Butuh approval sebelum kirim</label>'+
         '<select id="ai-provider">'+provOpt+'</select>'+
+        '<input id="ai-model" placeholder="Model (cth: gpt-4o-mini)" value="'+esc(s.model || cred.model || 'gpt-4o-mini')+'">'+
         '<select id="ai-preset">'+presetOpt+'</select>'+
+        '<textarea id="ai-core-prompt" placeholder="Core Prompt AI (kepala aturan balasan)...">'+esc(corePrompt)+'</textarea>'+
         '<button class="cs-btn sm g" id="ai-save">Simpan Setting</button>'+
       '</div>'+
       '<div class="cs-form">'+
@@ -853,8 +1065,25 @@
     html += '<div class="cs-form">'+
       '<b style="font:bold 11px Arial;color:#f4f7ff">Uji Draft AI</b>'+
       '<textarea id="lab-test" placeholder="Pesan pelanggan untuk diuji"></textarea>'+
-      '<button class="cs-btn sm" id="lab-test-btn">Uji</button>'+
+      '<textarea id="lab-expected" placeholder="Jawaban ideal versi Anda (opsional, untuk evaluasi)"></textarea>'+
+      '<div class="cs-row">'+
+        '<button class="cs-btn y sm" id="lab-use-active">Ambil dari Chat Aktif</button>'+
+        '<button class="cs-btn sm" id="lab-test-btn">Uji Draft AI</button>'+
+      '</div>'+
+      '<textarea id="lab-draft" placeholder="Hasil draft AI"></textarea>'+
+      '<div class="cs-row">'+
+        '<select id="lab-score">'+
+          '<option value="1">1 - Sangat Kurang</option>'+
+          '<option value="2">2 - Kurang</option>'+
+          '<option value="3">3 - Cukup</option>'+
+          '<option value="4">4 - Baik</option>'+
+          '<option value="5" selected>5 - Sangat Baik</option>'+
+        '</select>'+
+        '<input id="lab-notes" placeholder="Catatan evaluasi AI...">'+
+        '<button class="cs-btn y sm" id="lab-save-learn">Simpan Belajar</button>'+
+      '</div>'+
       '<div id="lab-test-out" style="font:11px Arial;color:#dce8ff;white-space:pre-wrap"></div>'+
+      '<div id="lab-test-eval" style="font:11px Arial;color:#cfe3ff;white-space:pre-wrap"></div>'+
     '</div>';
     if (!S.aiLearning.length) return html + '<div class="cs-empty">Belum ada sampel.</div>';
     html += '<h4>Sampel Terbaru</h4>';
@@ -917,19 +1146,40 @@
     /* AI settings */
     var aiSave = $('#ai-save');
     if (aiSave) aiSave.onclick = function(){
+      var corePrompt = ($('#ai-core-prompt') && $('#ai-core-prompt').value || '').trim();
       var payload = {
         ai_enabled: $('#ai-enabled').checked,
         require_approval: $('#ai-approval').checked,
         provider: $('#ai-provider').value,
-        prompt_preset: $('#ai-preset').value
+        model: ($('#ai-model') && $('#ai-model').value || '').trim(),
+        prompt_preset: corePrompt || $('#ai-preset').value,
+        core_prompt: corePrompt
       };
-      API.aiSettingsSet(payload).then(function(r){ toast('Setting AI disimpan','ok'); S.aiSettings = (r && (r.settings||r)) || payload; syncModeFromSettings(); renderSide(); }).catch(function(e){ toast(e.message,'err'); });
+      API.aiSettingsSet(payload).then(function(r){
+        LS.set('aiCorePrompt', corePrompt);
+        toast('Setting AI disimpan','ok');
+        S.aiSettings = (r && (r.settings||r.row||r)) || payload;
+        if (!S.aiSettings.core_prompt && corePrompt) S.aiSettings.core_prompt = corePrompt;
+        LS.set('aiSettingsLocal', S.aiSettings);
+        syncModeFromSettings();
+        loadAICredStatus();
+        render();
+      }).catch(function(e){ toast(e.message,'err'); });
     };
     var credSave = $('#ai-cred-save');
     if (credSave) credSave.onclick = function(){
       var key = $('#ai-cred-key').value;
       if (!key) return toast('API key kosong','err');
-      API.aiCredSet({ provider: $('#ai-cred-prov').value, api_key: key, model: $('#ai-cred-model').value.trim() }).then(function(){ toast('Kredensial disimpan','ok'); $('#ai-cred-key').value=''; loadAICredStatus(); }).catch(function(e){ toast(e.message,'err'); });
+      var provider = $('#ai-cred-prov').value;
+      var model = $('#ai-cred-model').value.trim();
+      API.aiCredSet({ provider: provider, api_key: key, model: model }).then(function(){
+        toast('Kredensial disimpan','ok');
+        $('#ai-cred-key').value='';
+        var cur = S.aiSettings || {};
+        S.aiSettings = Object.assign({}, cur, { provider: provider, model: model || cur.model || 'gpt-4o-mini' });
+        LS.set('aiSettingsLocal', S.aiSettings);
+        return Promise.all([loadAICredStatus(), loadAISettings()]);
+      }).catch(function(e){ toast(e.message,'err'); });
     };
 
     /* Lab */
@@ -938,17 +1188,102 @@
       var cust = $('#lab-cust').value.trim();
       var sell = $('#lab-sell').value.trim();
       if (!cust || !sell) return toast('CUST & SELLER wajib','err');
-      API.aiLearnAdd({ customer_text: cust, seller_text: sell }).then(function(){ toast('Sampel tersimpan','ok'); $('#lab-cust').value=''; $('#lab-sell').value=''; loadLearning(); }).catch(function(e){ toast(e.message,'err'); });
+      API.aiLearnAdd({ customer_text: cust, seller_text: sell, evaluation: 'manual_sample' }).then(function(){ toast('Sampel tersimpan','ok'); $('#lab-cust').value=''; $('#lab-sell').value=''; loadLearning(); }).catch(function(e){ toast(e.message,'err'); });
     };
     var labTest = $('#lab-test-btn');
     if (labTest) labTest.onclick = function(){
       var msg = $('#lab-test').value.trim();
       if (!msg) return;
       this.disabled = true; this.textContent = 'Menguji...';
-      api('/api/chat/ai/test-draft', { body: { shop_id: S.shopId, customer_text: msg } }).then(function(r){
-        $('#lab-test-out').textContent = r && (r.text || r.draft || JSON.stringify(r)) || '(kosong)';
+      var labPrompt = (S.aiSettings && (S.aiSettings.core_prompt || S.aiSettings.prompt_preset)) || LS.get('aiCorePrompt', '');
+      api('/api/chat/ai/test-draft', {
+        body: {
+          shop_id: S.shopId,
+          conversation_id: S.activeConvId || '',
+          incoming_text: msg,
+          provider: (S.aiSettings && S.aiSettings.provider) || 'openai',
+          model: (S.aiSettings && S.aiSettings.model) || 'gpt-4o-mini',
+          prompt_preset: labPrompt,
+          core_prompt: labPrompt,
+          use_knowledge: false,
+          use_learning: false
+        }
+      }).then(function(r){
+        var out = r && (r.draft_text || r.text || r.draft || JSON.stringify(r)) || '(kosong)';
+        $('#lab-test-out').textContent = out;
+        var labDraft = $('#lab-draft');
+        if (labDraft) labDraft.value = out;
+        var expected = ($('#lab-expected') && $('#lab-expected').value || '').trim();
+        if (expected){
+          var normalize = function(s){
+            return String(s || '')
+              .toLowerCase()
+              .replace(/[^\w\s]/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
+              .split(' ')
+              .filter(Boolean);
+          };
+          var a = normalize(expected);
+          var b = normalize(out);
+          var setB = {};
+          for (var bi = 0; bi < b.length; bi++) setB[b[bi]] = true;
+          var hit = 0;
+          for (var ai = 0; ai < a.length; ai++) if (setB[a[ai]]) hit++;
+          var score = a.length ? Math.round((hit / a.length) * 100) : 0;
+          var verdict = score >= 80 ? 'Sangat Baik' : (score >= 60 ? 'Cukup' : 'Perlu diperbaiki');
+          $('#lab-test-eval').textContent = 'Evaluasi kecocokan: ' + score + '% (' + verdict + ')\nKata kunci cocok: ' + hit + '/' + a.length;
+        } else {
+          $('#lab-test-eval').textContent = '';
+        }
       }).catch(function(e){ $('#lab-test-out').textContent = 'Error: '+e.message; })
-      .then(function(){ var b=$('#lab-test-btn'); if(b){ b.disabled=false; b.textContent='Uji'; } });
+      .then(function(){ var b=$('#lab-test-btn'); if(b){ b.disabled=false; b.textContent='Uji Draft AI'; } });
+    };
+
+    var labUseActive = $('#lab-use-active');
+    if (labUseActive) labUseActive.onclick = function(){
+      if (!S.messages || !S.messages.length) return toast('Belum ada chat aktif','err');
+      var latestCustomer = '';
+      for (var i = S.messages.length - 1; i >= 0; i--){
+        var m = S.messages[i];
+        var fromShop = m.from_shop_id != null ? String(m.from_shop_id) : '';
+        var fromId = m.from_id != null ? String(m.from_id) : '';
+        var isSeller = false;
+        if (fromShop) isSeller = fromShop === String(S.shopId || '');
+        else if (fromId){
+          var conv = activeConversationRow();
+          var buyerId = conv ? String(conv.to_id || conv.buyer_user_id || '') : '';
+          isSeller = buyerId ? (fromId !== buyerId) : (fromId === String(S.shopId || ''));
+        }
+        if (!isSeller){
+          latestCustomer = extractMessageText(m);
+          break;
+        }
+      }
+      if (!latestCustomer) return toast('Tidak ada pesan buyer untuk diambil','err');
+      $('#lab-test').value = latestCustomer;
+      toast('Pesan buyer dari chat aktif dipakai','ok');
+    };
+
+    var labSaveLearn = $('#lab-save-learn');
+    if (labSaveLearn) labSaveLearn.onclick = function(){
+      var incoming = ($('#lab-test') && $('#lab-test').value || '').trim();
+      var draftText = ($('#lab-draft') && $('#lab-draft').value || '').trim();
+      var score = Number(($('#lab-score') && $('#lab-score').value) || 5);
+      var notes = ($('#lab-notes') && $('#lab-notes').value || '').trim();
+      if (!incoming || !draftText) return toast('Isi pesan pelanggan dan draft AI dulu','err');
+      API.aiLearnAdd({
+        conversation_id: S.activeConvId || '',
+        customer_text: incoming,
+        seller_text: draftText,
+        score: score,
+        notes: notes,
+        evaluation: notes,
+        source: 'ai_lab_feedback'
+      }).then(function(){
+        toast('Contoh belajar AI tersimpan','ok');
+        return loadLearning();
+      }).catch(function(e){ toast('Gagal simpan pembelajaran AI: '+e.message,'err'); });
     };
 
     var pSearch = $('#cs-prd-search');
@@ -983,8 +1318,10 @@
   function render(){
     injectCSS();
     ensureTabRegistered();
+    enforceCSAutoVisibility();
     var mount = document.getElementById('V-csauto');
     if (!mount) return;
+    if (!isCSAutoActive()) return;
     mount.innerHTML = (
       '<div class="cs-wrap">'+
         renderTop()+
@@ -1003,12 +1340,17 @@
             '<div class="cs-side-body" id="cs-side">'+renderSideContent()+'</div>'+
           '</div>'+
         '</div>'+
+        renderModal()+
       '</div>'
     );
     bindTop(mount);
     bindConvList(mount);
     bindMiddle(mount);
     bindSide(mount);
+    var closeModal = mount.querySelector('#cs-modal-close');
+    if (closeModal) closeModal.onclick = function(){ S.modal = null; render(); };
+    var backdrop = mount.querySelector('#cs-modal-backdrop');
+    if (backdrop) backdrop.onclick = function(e){ if (e.target === backdrop){ S.modal = null; render(); } };
     /* Auto-scroll messages ke bawah */
     var msgBox = mount.querySelector('#cs-msgs');
     if (msgBox) msgBox.scrollTop = msgBox.scrollHeight;
@@ -1044,17 +1386,37 @@
     bindSide(mount);
   }
 
+  function renderModal(){
+    if (!S.modal) return '';
+    var title = S.modal === 'knowledge' ? 'Pusat Informasi' : (S.modal === 'ai' ? 'Mode AI' : 'Lab AI');
+    var content = '';
+    if (S.modal === 'knowledge') content = renderKnowledge();
+    else if (S.modal === 'ai') content = renderAIPanel();
+    else if (S.modal === 'lab') content = renderLab();
+    return (
+      '<div class="cs-modal-backdrop" id="cs-modal-backdrop">'+
+        '<div class="cs-modal">'+
+          '<div class="cs-modal-head">'+
+            '<span>'+esc(title)+'</span>'+
+            '<button class="cs-modal-close" id="cs-modal-close">Tutup</button>'+
+          '</div>'+
+          '<div class="cs-modal-body">'+content+'</div>'+
+        '</div>'+
+      '</div>'
+    );
+  }
+
   /* ---------- 14. Actions ---------- */
   function openConv(id){
     S.activeConvId = id;
     S.aiDraftCurrent = null;
-    S.messages = [];
+    if (!isSimulationConv(id)) S.messages = [];
     renderListOnly();
     renderMiddleOnly();
-    loadMessages(id);
+    if (!isSimulationConv(id)) loadMessages(id);
     if (S.sideTab === 'orders') loadOrders(false);
     /* Mark read */
-    API.markRead(id).catch(function(){});
+    if (!isSimulationConv(id)) API.markRead(id).catch(function(){});
   }
 
   function sendReply(){
@@ -1063,10 +1425,78 @@
     var text = (ta.value||'').trim();
     if (!text) return toast('Pesan kosong','err');
     if (!S.activeConvId) return toast('Pilih chat dulu','err');
+    if (isSimulationConv(S.activeConvId)){
+      var now = Date.now();
+      S.simulationMessages = Array.isArray(S.simulationMessages) ? S.simulationMessages : [];
+      S.simulationMessages.push({
+        id: 'sim-cust-' + now,
+        from_id: SIM_BUYER_ID,
+        from_shop_id: '',
+        content_text: text,
+        created_timestamp: now,
+        message_type: 'text'
+      });
+      LS.set('simulationMessages', S.simulationMessages);
+      ta.value = '';
+      setDraftText('');
+      renderListOnly();
+      renderMiddleOnly();
+      var latestIncoming = text;
+      var simPrompt = (S.aiSettings && (S.aiSettings.core_prompt || S.aiSettings.prompt_preset)) || LS.get('aiCorePrompt', '');
+      api('/api/chat/ai/test-draft', {
+        body: {
+          shop_id: S.shopId,
+          conversation_id: '',
+          incoming_text: latestIncoming,
+          provider: (S.aiSettings && S.aiSettings.provider) || 'openai',
+          model: (S.aiSettings && S.aiSettings.model) || 'gpt-4o-mini',
+          prompt_preset: simPrompt,
+          core_prompt: simPrompt,
+          use_knowledge: false,
+          use_learning: false
+        }
+      })
+        .then(function(r){
+          var out = String((r && (r.draft_text || r.text || r.draft)) || '').trim();
+          if (!out) return;
+          var lowerIn = latestIncoming.toLowerCase();
+          if (lowerIn.indexOf('cod') >= 0 && out.toLowerCase().indexOf('cod') < 0){
+            out = 'Halo Kak, untuk COD/bayar di tempat mengikuti opsi yang muncul di checkout ya. Jika opsi COD muncul, berarti alamat dan produk mendukung COD. Jika tidak muncul, biasanya area pengiriman belum support COD.';
+          }
+          var at = Date.now();
+          S.simulationMessages.push({
+            id: 'sim-ai-' + at,
+            from_id: String(S.shopId || ''),
+            from_shop_id: String(S.shopId || ''),
+            by_ai: true,
+            source: 'ai',
+            content_text: out,
+            created_timestamp: at,
+            message_type: 'text'
+          });
+          LS.set('simulationMessages', S.simulationMessages);
+          renderListOnly();
+          renderMiddleOnly();
+          if (S.simulationAutoAdapt){
+            API.aiLearnAdd({
+              conversation_id: '',
+              customer_text: latestIncoming,
+              seller_text: out,
+              score: 4,
+              notes: 'auto-adapt dari simulasi',
+              evaluation: 'auto-adapt dari simulasi',
+              source: 'simulation_auto'
+            }).catch(function(){});
+          }
+        })
+        .catch(function(e){ toast('AI simulasi gagal: '+e.message, 'err'); });
+      return;
+    }
     var btn = document.querySelector('#V-csauto #cs-send');
     if (btn) btn.disabled = true;
     API.send(S.activeConvId, text).then(function(){
       ta.value = '';
+      setDraftText('');
       S.aiDraftCurrent = null;
       loadMessages(S.activeConvId);
       toast('Terkirim','ok');
@@ -1078,9 +1508,29 @@
     if (!S.activeConvId) return toast('Pilih chat dulu','err');
     var btn = document.querySelector('#V-csauto #cs-draft-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Memikirkan...'; }
+    if (isSimulationConv(S.activeConvId)){
+      var incoming = '';
+      var sim = Array.isArray(S.simulationMessages) ? S.simulationMessages : [];
+      for (var si = sim.length - 1; si >= 0; si--){
+        if (!isSellerMessage(sim[si])) { incoming = extractMessageText(sim[si]); break; }
+      }
+      if (!incoming){
+        if (btn) { btn.disabled = false; btn.textContent = 'Minta Draft AI'; }
+        return toast('Belum ada pesan buyer simulasi', 'err');
+      }
+      return api('/api/chat/ai/test-draft', { body: { shop_id: S.shopId, conversation_id: '', incoming_text: incoming } })
+        .then(function(r){
+          var text = String((r && (r.draft_text || r.text || r.draft)) || '').trim();
+          if (!text) throw new Error('Draft kosong');
+          S.aiDraftCurrent = { id: null, text: text };
+          renderMiddleOnly();
+        })
+        .catch(function(e){ toast('Draft gagal: '+e.message,'err'); })
+        .then(function(){ var b=document.querySelector('#V-csauto #cs-draft-btn'); if(b){ b.disabled=false; b.textContent='Minta Draft AI'; } });
+    }
     var hist = S.messages.slice(-10).map(function(m){
       var text = extractMessageText(m);
-      var role = m.from_shop_id ? 'seller' : 'customer';
+      var role = isSellerMessage(m) ? 'seller' : 'customer';
       return { role: role, content: typeof text === 'string' ? text : JSON.stringify(text) };
     });
     API.aiDraft(S.activeConvId, hist).then(function(r){
@@ -1096,6 +1546,25 @@
   function approveDraft(){
     if (!S.activeConvId || !S.aiDraftCurrent) return;
     var d = S.aiDraftCurrent;
+    if (isSimulationConv(S.activeConvId)){
+      var at = Date.now();
+      S.simulationMessages = Array.isArray(S.simulationMessages) ? S.simulationMessages : [];
+      S.simulationMessages.push({
+        id: 'sim-ai-' + at,
+        from_id: String(S.shopId || ''),
+        from_shop_id: String(S.shopId || ''),
+        by_ai: true,
+        source: 'ai',
+        content_text: d.text,
+        created_timestamp: at,
+        message_type: 'text'
+      });
+      LS.set('simulationMessages', S.simulationMessages);
+      S.aiDraftCurrent = null;
+      render();
+      toast('Draft simulasi dikirim','ok');
+      return;
+    }
     API.aiApprove(S.activeConvId, d.id, d.text).then(function(){
       S.aiDraftCurrent = null;
       toast('Terkirim (via AI)','ok');
@@ -1121,6 +1590,60 @@
     ta.focus();
   }
 
+  function isBuyerLastInConversation(c){
+    if (!c) return false;
+    var fromId = String(c.latest_message_from_id || '');
+    if (!fromId) return false;
+    return fromId !== String(S.shopId || '');
+  }
+
+  function isPendingConversation(c){
+    if (!c) return false;
+    var unread = Number(c.unread_count || 0) > 0;
+    var hasUnreplied = String(c.has_unreplied || c.unreplied || '') === '1' || String(c.conversation_filter_type || '').toLowerCase() === 'unreplied';
+    var buyerLast = isBuyerLastInConversation(c);
+    return unread || hasUnreplied || buyerLast;
+  }
+
+  function findBestPendingConversation(){
+    if (!Array.isArray(S.conversations) || !S.conversations.length) return null;
+    var ranked = S.conversations.filter(isPendingConversation);
+    if (!ranked.length) return null;
+    ranked.sort(function(a,b){
+      var aUnread = Number(a.unread_count || 0);
+      var bUnread = Number(b.unread_count || 0);
+      if (bUnread !== aUnread) return bUnread - aUnread;
+      var aTs = toTs(a.last_message_timestamp || a.last_message_time || a.updated_at || a.last_message_timestamp_raw);
+      var bTs = toTs(b.last_message_timestamp || b.last_message_time || b.updated_at || b.last_message_timestamp_raw);
+      return bTs - aTs;
+    });
+    return ranked[0];
+  }
+
+  function maybeAutoOpenPendingConversation(){
+    if (S.mode !== 'approval') return;
+    var best = findBestPendingConversation();
+    if (!best) return;
+    var bestId = String(best.conversation_id || best.id || '');
+    if (!bestId) return;
+    var current = String(S.activeConvId || '');
+    if (current !== bestId){
+      openConv(bestId);
+    }
+  }
+
+  function maybeGenerateApprovalDraft(){
+    if (S.mode !== 'approval') return;
+    if (!S.activeConvId || S.loadingMsgs || !Array.isArray(S.messages) || !S.messages.length) return;
+    var last = S.messages[S.messages.length - 1];
+    var isSellerLast = isSellerMessage(last);
+    if (isSellerLast) return;
+    var sig = String(S.activeConvId) + ':' + String(last.id || last.message_id || last.created_timestamp || last.timestamp || last.created_at || '');
+    if (S.autoDraftSigByConv[S.activeConvId] === sig) return;
+    S.autoDraftSigByConv[S.activeConvId] = sig;
+    requestDraft();
+  }
+
   /* ---------- 15. Loaders ---------- */
   function loadConversations(){
     S.loadingChats = true;
@@ -1134,12 +1657,16 @@
         var bTs = toTs(b.last_message_timestamp || b.last_message_time || b.updated_at || b.last_message_timestamp_raw);
         return bTs - aTs;
       });
+      if (S.simulationEnabled){
+        S.conversations.unshift(buildSimulationConversation());
+      }
       if (S.activeConvId && !S.conversations.some(function(c){ return String(c.conversation_id||c.id)===String(S.activeConvId); })) {
         S.activeConvId = null;
         S.messages = [];
       }
       S.loadingChats = false;
       renderListOnly();
+      maybeAutoOpenPendingConversation();
     }).catch(function(e){
       S.loadingChats = false;
       S.conversations = [];
@@ -1150,6 +1677,10 @@
 
   function loadMessages(cid){
     if (!cid) return Promise.resolve();
+    if (isSimulationConv(cid)){
+      renderMiddleOnly();
+      return Promise.resolve();
+    }
     S.loadingMsgs = true;
     var mount = document.getElementById('V-csauto');
     var box = mount && mount.querySelector('#cs-msgs');
@@ -1160,6 +1691,8 @@
       S.messages = Array.isArray(list) ? list : [];
       S.loadingMsgs = false;
       renderMiddleOnly();
+      maybeGenerateApprovalDraft();
+      maybeAutoReplyUnread();
     }).catch(function(e){
       S.loadingMsgs = false;
       renderMiddleOnly();
@@ -1167,13 +1700,47 @@
     });
   }
 
+  function maybeAutoReplyUnread(){
+    if (!S.realtime) return;
+    if (S.mode !== 'auto' && S.mode !== 'approval') return;
+    if (!S.activeConvId || isSimulationConv(S.activeConvId)) return;
+    if (!Array.isArray(S.messages) || !S.messages.length) return;
+    var last = S.messages[S.messages.length - 1];
+    if (isSellerMessage(last)) return;
+    var sig = String(S.activeConvId) + ':' + String(last.id || last.message_id || last.created_timestamp || last.timestamp || last.created_at || '');
+    if (S.autoDraftSigByConv['_auto_' + S.activeConvId] === sig) return;
+    S.autoDraftSigByConv['_auto_' + S.activeConvId] = sig;
+    requestDraft();
+  }
+
   function loadOrders(refresh){ return API.orders(S.activeConvId, refresh).then(function(r){ S.orders = pickList(r); if (S.sideTab==='orders') renderSide(); }).catch(function(){ S.orders=[]; if (S.sideTab==='orders') renderSide(); }); }
   function loadProducts(refresh){ return API.products(refresh).then(function(r){ S.products = pickList(r); if (S.sideTab==='products') renderSide(); }).catch(function(){}); }
   function loadQuickReplies(){ return API.quickList().then(function(r){ S.quickReplies = pickList(r); if (S.sideTab==='quick') renderSide(); }).catch(function(){}); }
-  function loadKnowledge(){ return API.knowList().then(function(r){ S.knowledge = pickList(r); if (S.sideTab==='knowledge') renderSide(); }).catch(function(){}); }
-  function loadAISettings(){ return API.aiSettingsGet().then(function(r){ S.aiSettings = (r && (r.settings||r)) || {}; /* Sync mode select */ syncModeFromSettings(); if (S.sideTab==='ai') renderSide(); }).catch(function(){}); }
-  function loadAICredStatus(){ return API.aiCredStatus().then(function(r){ S.aiCredStatus = r || {}; if (S.sideTab==='ai') renderSide(); }).catch(function(){}); }
-  function loadLearning(){ return API.aiLearnList().then(function(r){ S.aiLearning = pickList(r); if (S.sideTab==='lab') renderSide(); }).catch(function(){}); }
+  function loadKnowledge(){ return API.knowList().then(function(r){ S.knowledge = pickList(r); if (S.modal==='knowledge') render(); }).catch(function(){}); }
+  function loadAISettings(){
+    return API.aiSettingsGet().then(function(r){
+      S.aiSettings = (r && (r.settings||r.row||r)) || {};
+      if (!S.aiSettings.core_prompt){
+        var savedPrompt = LS.get('aiCorePrompt', '');
+        if (savedPrompt) S.aiSettings.core_prompt = savedPrompt;
+      }
+      LS.set('aiSettingsLocal', S.aiSettings);
+      syncModeFromSettings();
+      if (S.modal === 'ai') render();
+    }).catch(function(){
+      if (S.aiSettingsLocal) {
+        S.aiSettings = S.aiSettingsLocal;
+        syncModeFromSettings();
+      }
+    });
+  }
+  function loadAICredStatus(){
+    return API.aiCredStatus().then(function(r){
+      S.aiCredStatus = (r && (r.row || r.status || r)) || {};
+      if (S.modal === 'ai') render();
+    }).catch(function(){});
+  }
+  function loadLearning(){ return API.aiLearnList().then(function(r){ S.aiLearning = pickList(r); if (S.modal==='lab') render(); }).catch(function(){}); }
 
   function syncModeFromSettings(){
     if (!S.aiSettings) return;
@@ -1193,9 +1760,7 @@
       case 'orders': return loadOrders(false);
       case 'products': return loadProducts(false);
       case 'quick': return loadQuickReplies();
-      case 'knowledge': return loadKnowledge();
-      case 'ai': loadAISettings(); return loadAICredStatus();
-      case 'lab': return loadLearning();
+      default: return Promise.resolve();
     }
   }
 
@@ -1212,6 +1777,7 @@
     stopPolling();
     var tick = function(){
       if (!S.realtime) return;
+      if (!isCSAutoActive()) return;
       S.pollCycle += 1;
       API.realtimePoll().then(function(r){
         if (!r) return;
@@ -1240,6 +1806,7 @@
   function activateCSAuto(){
     ensureView();
     hideOtherViews();
+    enforceCSAutoVisibility();
     window._activeTab = 'csauto';
     try { if (typeof window.buildTabBar === 'function') window.buildTabBar(); } catch(e){}
     ensureCSAutoTabButton();
@@ -1292,11 +1859,16 @@
       ensureView();
       ensureCSAutoTabButton();
       hookNavigation();
+      enforceCSAutoVisibility();
     } catch(e){}
     tries++;
     if (tries < 40) setTimeout(install, 300);
   }
   install();
+
+  setInterval(function(){
+    try { enforceCSAutoVisibility(); } catch(e){}
+  }, 500);
 
   if (window.MutationObserver){
     try {

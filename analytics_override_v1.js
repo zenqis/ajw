@@ -26,6 +26,26 @@
       updatedAt: ''
     };
   }
+  function aRepricingDefault(){
+    return {
+      shopeeRows: [],
+      bigsellerRows: [],
+      settings: {
+        adminPct: 10,
+        layananPct: 5,
+        adsPct: 7,
+        processFee: 1250,
+        spaylaterPct: 0,
+        extraPct: 0,
+        targetProfitPct: 20,
+        fuzzyThreshold: 80,
+        defaultConversionDropPer10: 10
+      },
+      shopeeFileName: '',
+      bigsellerFileName: '',
+      updatedAt: ''
+    };
+  }
 
   function aNum(v){ return _num(v); }
   function aEsc(v){ return esc(v == null ? '' : String(v)); }
@@ -55,12 +75,30 @@
       return aPurchaseDefault();
     }
   })();
+  window._analyticsRepricing = (function(){
+    try{
+      return JSON.parse(localStorage.getItem('ajw_analytics_repricing') || 'null') || aRepricingDefault();
+    }catch(e){
+      return aRepricingDefault();
+    }
+  })();
 
   ['sales','service','promo','customers'].forEach(function(key){
     if(!Array.isArray(_analyticsData[key])) _analyticsData[key] = [];
   });
   if(!_analyticsPurchase || typeof _analyticsPurchase !== 'object') _analyticsPurchase = aPurchaseDefault();
   if(!Array.isArray(_analyticsPurchase.rows)) _analyticsPurchase.rows = [];
+  if(!_analyticsRepricing || typeof _analyticsRepricing !== 'object') _analyticsRepricing = aRepricingDefault();
+  if(!Array.isArray(_analyticsRepricing.shopeeRows)) _analyticsRepricing.shopeeRows = [];
+  if(!Array.isArray(_analyticsRepricing.bigsellerRows)) _analyticsRepricing.bigsellerRows = [];
+  if(!_analyticsRepricing.settings || typeof _analyticsRepricing.settings !== 'object'){
+    _analyticsRepricing.settings = aRepricingDefault().settings;
+  }
+  Object.keys(aRepricingDefault().settings).forEach(function(key){
+    if(_analyticsRepricing.settings[key] == null || _analyticsRepricing.settings[key] === ''){
+      _analyticsRepricing.settings[key] = aRepricingDefault().settings[key];
+    }
+  });
 
   window._analyticsSub = window._analyticsSub || 'dash';
   window._analyticsUI = window._analyticsUI || {
@@ -85,6 +123,13 @@
   function aSavePurchaseStore(){
     try{
       localStorage.setItem('ajw_analytics_purchase_map', JSON.stringify(_analyticsPurchase || aPurchaseDefault()));
+    }catch(e){}
+  }
+  function aSaveRepricingStore(){
+    try{
+      _analyticsRepricing.updatedAt = new Date().toISOString();
+      window._analyticsRepricingComputeCache = null;
+      localStorage.setItem('ajw_analytics_repricing', JSON.stringify(_analyticsRepricing || aRepricingDefault()));
     }catch(e){}
   }
 
@@ -1845,6 +1890,609 @@
     inp.click();
   }
 
+  function aRepricingNorm(v){
+    return String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g,'').trim();
+  }
+  function aRepricingText(v){
+    return aNorm(v).replace(/\s+/g,' ').trim();
+  }
+  function aRepricingLevenshtein(a, b){
+    a = String(a || '');
+    b = String(b || '');
+    if(a === b) return 0;
+    if(!a) return b.length;
+    if(!b) return a.length;
+    var prev = [];
+    for(var j = 0; j <= b.length; j++) prev[j] = j;
+    for(var i = 1; i <= a.length; i++){
+      var cur = [i];
+      for(var k = 1; k <= b.length; k++){
+        var cost = a.charAt(i - 1) === b.charAt(k - 1) ? 0 : 1;
+        cur[k] = Math.min(cur[k - 1] + 1, prev[k] + 1, prev[k - 1] + cost);
+      }
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  function aRepricingSimilarity(a, b){
+    a = String(a || '');
+    b = String(b || '');
+    if(!a || !b) return 0;
+    if(a === b) return 100;
+    if(a.indexOf(b) >= 0 || b.indexOf(a) >= 0) return 96;
+    var dist = aRepricingLevenshtein(a, b);
+    var maxLen = Math.max(a.length, b.length, 1);
+    return Math.max(0, Math.round((1 - (dist / maxLen)) * 100));
+  }
+  function aRepricingReadField(row, keys){
+    var map = {};
+    Object.keys(row || {}).forEach(function(k){ map[aHeaderKey(k)] = row[k]; });
+    for(var i = 0; i < keys.length; i++){
+      var val = map[aHeaderKey(keys[i])];
+      if(val != null && String(val).trim() !== '') return val;
+    }
+    return '';
+  }
+  function aRepricingShopeeRow(obj, idx){
+    var sku = String(aRepricingReadField(obj, ['sku','seller sku','sku induk','kode sku','nomor sku']) || '').trim();
+    var name = String(aRepricingReadField(obj, ['nama produk','product name','nama barang','produk']) || '').trim();
+    var price = aNumLoose(aRepricingReadField(obj, ['harga jual','harga','price','harga produk']));
+    var sold = aNumLoose(aRepricingReadField(obj, ['terjual','sold','qty','jumlah terjual','unit terjual']));
+    var revenue = aNumLoose(aRepricingReadField(obj, ['revenue','omzet','pendapatan','sales']));
+    if(!sold && price > 0 && revenue > 0) sold = revenue / price;
+    return {
+      id: aId('repr_shopee_' + idx),
+      sku: sku,
+      productName: name,
+      price: price,
+      sold: sold,
+      revenue: revenue,
+      raw: obj || {}
+    };
+  }
+  function aRepricingBigsellerRow(obj, idx){
+    return {
+      id: aId('repr_bs_' + idx),
+      sku: String(aRepricingReadField(obj, ['sku','seller sku','sku induk','kode sku','nomor sku']) || '').trim(),
+      productName: String(aRepricingReadField(obj, ['nama produk','product name','nama barang','produk']) || '').trim(),
+      hpp: aNumLoose(aRepricingReadField(obj, ['hpp','harga modal','modal','cost','harga pokok'])),
+      category: String(aRepricingReadField(obj, ['kategori','category']) || '').trim(),
+      raw: obj || {}
+    };
+  }
+  function aRepricingImportRows(kind, rows, fileName){
+    var mapped = (rows || []).map(function(r, idx){
+      return kind === 'shopee' ? aRepricingShopeeRow(r, idx) : aRepricingBigsellerRow(r, idx);
+    }).filter(function(r){
+      if(kind === 'shopee') return r.sku || r.productName || r.price;
+      return r.sku || r.productName || r.hpp;
+    });
+    if(!mapped.length){
+      toast('Header file ' + kind + ' tidak cocok atau file kosong.', 'error', 4200);
+      return;
+    }
+    if(kind === 'shopee'){
+      _analyticsRepricing.shopeeRows = mapped;
+      _analyticsRepricing.shopeeFileName = fileName || '';
+    }else{
+      _analyticsRepricing.bigsellerRows = mapped;
+      _analyticsRepricing.bigsellerFileName = fileName || '';
+    }
+    aSaveRepricingStore();
+    toast('Import ' + (kind === 'shopee' ? 'Shopee' : 'BigSeller') + ' berhasil: ' + mapped.length + ' baris', 'success', 3600);
+    _renderAnalytics('repricing');
+  }
+  function aRepricingImport(kind){
+    aEnsureXLSX(function(){
+      var inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = '.csv,.xlsx,.xls';
+      inp.onchange = function(e){
+        var file = e.target.files && e.target.files[0];
+        if(!file) return;
+        var name = String(file.name || '').toLowerCase();
+        if((name.endsWith('.xlsx') || name.endsWith('.xls')) && !window.XLSX){
+          toast('Parser XLSX belum aktif. Gunakan CSV atau aktifkan parser XLSX.', 'warn', 4500);
+          return;
+        }
+        if(name.endsWith('.xlsx') || name.endsWith('.xls')){
+          var fr = new FileReader();
+          fr.onload = function(ev){
+            try{
+              var wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+              var sheet = wb.Sheets[wb.SheetNames[0]];
+              var rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+              aRepricingImportRows(kind, rows, file.name || '');
+            }catch(err){
+              toast('Gagal membaca file Excel ' + kind, 'error', 4200);
+            }
+          };
+          fr.readAsArrayBuffer(file);
+          return;
+        }
+        var fr2 = new FileReader();
+        fr2.onload = function(ev){
+          try{
+            aRepricingImportRows(kind, aParseCsv(ev.target.result), file.name || '');
+          }catch(err){
+            toast('Gagal membaca CSV ' + kind, 'error', 4200);
+          }
+        };
+        fr2.readAsText(file);
+      };
+      inp.click();
+    });
+  }
+  function aRepricingDownloadTemplate(kind){
+    var rows = kind === 'shopee'
+      ? [['SKU','Nama Produk','Harga Jual','Terjual','Revenue'],['SCORPIO.165','Joran Scorpio 165',125000,25,3125000]]
+      : [['SKU','Nama Produk','HPP','Kategori'],['SCORPIO-165','Joran Scorpio 165',76000,'Olahraga & Rekreasi']];
+    aEnsureXLSX(function(){
+      if(window.XLSX){
+        var wb = window.XLSX.utils.book_new();
+        var ws = window.XLSX.utils.aoa_to_sheet(rows);
+        window.XLSX.utils.book_append_sheet(wb, ws, kind === 'shopee' ? 'Shopee' : 'BigSeller');
+        window.XLSX.writeFile(wb, kind === 'shopee' ? 'template_repricing_shopee.xlsx' : 'template_repricing_bigseller.xlsx');
+        return;
+      }
+      var csv = rows.map(function(row){ return row.join(','); }).join('\n');
+      var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = kind === 'shopee' ? 'template_repricing_shopee.csv' : 'template_repricing_bigseller.csv';
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+    });
+  }
+  function aRepricingApplySettings(){
+    var ids = {
+      adminPct:'AR-SET-ADMIN',
+      layananPct:'AR-SET-LAYANAN',
+      adsPct:'AR-SET-ADS',
+      processFee:'AR-SET-PROCESS',
+      spaylaterPct:'AR-SET-SPAY',
+      extraPct:'AR-SET-EXTRA',
+      targetProfitPct:'AR-SET-TARGET',
+      fuzzyThreshold:'AR-SET-FUZZY'
+    };
+    Object.keys(ids).forEach(function(key){
+      var el = document.getElementById(ids[key]);
+      if(!el) return;
+      _analyticsRepricing.settings[key] = aNumLoose(el.value);
+    });
+    _analyticsRepricing.settings.defaultConversionDropPer10 = 10;
+    aSaveRepricingStore();
+    toast('Setting repricing disimpan', 'success', 2400);
+    _renderAnalytics('repricing');
+  }
+  function aRepricingResetData(){
+    confirmDelete('Reset semua data Revisi Harga?', function(){
+      _analyticsRepricing = aRepricingDefault();
+      aSaveRepricingStore();
+      _renderAnalytics('repricing');
+      toast('Data Revisi Harga direset', 'success', 3000);
+    });
+  }
+  function aRepricingMatch(shopeeRow, bigRows, threshold){
+    threshold = threshold || 80;
+    var skuNorm = aRepricingNorm(shopeeRow && shopeeRow.sku);
+    var nameNorm = aRepricingText(shopeeRow && shopeeRow.productName);
+    var best = null;
+    (bigRows || []).forEach(function(row){
+      var bsSkuNorm = aRepricingNorm(row && row.sku);
+      var bsNameNorm = aRepricingText(row && row.productName);
+      var skuScore = skuNorm && bsSkuNorm ? aRepricingSimilarity(skuNorm, bsSkuNorm) : 0;
+      var nameScore = nameNorm && bsNameNorm ? aRepricingSimilarity(nameNorm, bsNameNorm) : 0;
+      var source = 'name';
+      var score = nameScore;
+      if(skuNorm && bsSkuNorm && skuNorm === bsSkuNorm){
+        score = 100;
+        source = 'sku-exact';
+      }else if(skuScore >= score){
+        score = skuScore;
+        source = 'sku';
+      }
+      if(!best || score > best.score || (score === best.score && source === 'sku-exact')){
+        best = {row:row, score:score, skuScore:skuScore, nameScore:nameScore, source:source};
+      }
+    });
+    if(!best || !best.row) return {status:'NOT FOUND', row:null, score:0, source:'-'};
+    if(best.source === 'sku-exact' || best.score >= 95) return {status:'MATCH', row:best.row, score:best.score, source:best.source};
+    if(best.score >= threshold || best.nameScore >= threshold) return {status:'PARTIAL MATCH', row:best.row, score:best.score, source:best.source};
+    return {status:'NOT FOUND', row:null, score:best.score, source:best.source};
+  }
+  function aRepricingStatus(profitPct){
+    if(profitPct > 30) return {label:'HIGH PROFIT', action:'SCALE', color:'#57f29a'};
+    if(profitPct > 20) return {label:'LAYAK SCALE', action:'SCALE', color:'#9af06b'};
+    if(profitPct >= 10) return {label:'LAYAK HATI-HATI', action:'HOLD', color:'#f0c56a'};
+    return {label:'TIDAK LAYAK SCALE', action:'STOP', color:'#ff7d7d'};
+  }
+  function aRepricingFmtPct(v){
+    return (Math.round(aNum(v) * 100) / 100).toFixed(2) + '%';
+  }
+  function aRepricingMoney(v){
+    return 'Rp ' + fmt(Math.round(aNum(v)));
+  }
+  function aRepricingEnsureStyles(){
+    if(document.getElementById('AJW-REPRICING-STYLES')) return;
+    var css = [
+      '.repr-shell{width:100%;min-height:100vh;background:#070b12;color:#e5e7eb;padding:16px;display:flex;flex-direction:column;gap:16px;margin:0}',
+      '.repr-dashboard{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;width:100%}',
+      '.repr-card{background:#0f172a;border:1px solid #1f2937;border-radius:14px;box-shadow:0 10px 24px rgba(2,6,23,.34);padding:16px}',
+      '.repr-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}',
+      '.repr-title{font-size:24px;font-weight:800;color:#f8fafc;line-height:1.2}',
+      '.repr-subtitle{font-size:12px;color:#93a8c2;margin-top:4px;line-height:1.6}',
+      '.repr-actions{display:flex;gap:8px;flex-wrap:wrap}',
+      '.repr-kpi-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px;width:100%}',
+      '.repr-kpi{grid-column:span 2;background:#111b31;border:1px solid #22304a;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,.3);padding:16px}',
+      '.repr-kpi-lbl{font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}',
+      '.repr-kpi-val{font-size:28px;font-weight:800;color:#f8fafc;margin-top:8px}',
+      '.repr-kpi-note{font-size:11px;color:#8ca0bb;margin-top:6px}',
+      '.repr-grid-12{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:16px}',
+      '.repr-col-12{grid-column:span 12}',
+      '.repr-col-8{grid-column:span 8}',
+      '.repr-col-6{grid-column:span 6}',
+      '.repr-col-4{grid-column:span 4}',
+      '.repr-input-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px}',
+      '.repr-input-grid > div{grid-column:span 3}',
+      '.repr-input{grid-column:span 3}',
+      '.repr-shell .repr-section-title{font-size:13px;font-weight:800;color:#f8fafc}',
+      '.repr-shell .repr-section-sub{font-size:11px;color:#93a8c2;margin-top:4px;line-height:1.5}',
+      '.repr-shell .lbl{font-size:11px!important;font-weight:700!important;color:#9fb0c8!important}',
+      '.repr-shell .fi{background:#0b1220!important;color:#e2e8f0!important;border:1px solid #243247!important;border-radius:10px!important;box-shadow:none!important}',
+      '.repr-shell .fi:focus{border-color:#60a5fa!important;box-shadow:0 0 0 3px rgba(59,130,246,.25)!important}',
+      '.repr-shell .btns,.repr-shell .btnsm{background:#111b31!important;color:#dbe8ff!important;border:1px solid #2a3950!important;border-radius:10px!important;box-shadow:none!important}',
+      '.repr-shell .btns:hover,.repr-shell .btnsm:hover{background:#17243c!important;border-color:#355073!important}',
+      '.repr-shell .btnp{background:#f59e0b!important;color:#0b1220!important;border:1px solid #fbbf24!important;border-radius:10px!important;box-shadow:none!important}',
+      '.repr-pill{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid #314155;background:#111b31;color:#d3e1f5}',
+      '.repr-alert{padding:10px 12px;border-radius:10px;border:1px solid #35445d;font-size:12px;background:#111827}',
+      '.repr-ok{color:#16a34a;font-weight:700}',
+      '.repr-warn{color:#d97706;font-weight:700}',
+      '.repr-bad{color:#dc2626;font-weight:700}',
+      '.overflow-x-auto{overflow-x:auto;-webkit-overflow-scrolling:touch}',
+      '.repr-table{min-width:100%;width:max-content;border-collapse:separate;border-spacing:0;font-size:12px;background:#0b1220;table-layout:auto}',
+      '.min-w-full{min-width:100%}',
+      '.repr-table thead th{position:sticky;top:0;background:#0f1a2f;color:#d7e5fb;border-bottom:1px solid #2a3950;padding:12px 14px;text-align:left;white-space:nowrap;font-size:11px;font-weight:700;z-index:2}',
+      '.repr-table tbody td{padding:12px 14px;border-bottom:1px solid #1f2b3f;white-space:nowrap;color:#dbe6f6;line-height:1.45;vertical-align:top}',
+      '.repr-table tbody tr:nth-child(even) td{background:#0f172a}',
+      '.repr-table tbody tr:hover td{background:#13203a}',
+      '.repr-table thead th:nth-child(1),.repr-table tbody td:nth-child(1){min-width:230px}',
+      '.repr-table thead th:nth-child(2),.repr-table tbody td:nth-child(2){min-width:230px}',
+      '.repr-table thead th:nth-child(3),.repr-table tbody td:nth-child(3){min-width:128px}',
+      '.repr-table thead th:nth-child(11),.repr-table tbody td:nth-child(11){min-width:190px}',
+      '.repr-main-bg{background:#070b12}',
+      '.text-gray-800{color:#f8fafc}',
+      '.border-gray-200{border-color:#1f2937}',
+      '.rounded-xl{border-radius:12px}',
+      '.shadow-sm{box-shadow:0 10px 24px rgba(2,6,23,.3)}',
+      '.w-full{width:100%}',
+      '.min-h-screen{min-height:100vh}',
+      '.grid-cols-12{grid-template-columns:repeat(12,minmax(0,1fr))}',
+      '.gap-4{gap:16px}',
+      '.p-4{padding:16px}',
+      '.p-6{padding:24px}',
+      '@media (max-width: 1200px){.repr-kpi{grid-column:span 4}.repr-input-grid > div,.repr-input{grid-column:span 4}}',
+      '@media (max-width: 920px){.repr-col-8,.repr-col-6,.repr-col-4,.repr-kpi{grid-column:span 12}.repr-input-grid > div,.repr-input{grid-column:span 6}}',
+      '@media (max-width: 640px){.repr-shell{padding:12px;gap:12px}.repr-dashboard,.repr-kpi-grid,.repr-grid-12,.repr-input-grid{gap:12px}.repr-input-grid > div,.repr-input{grid-column:span 12}.repr-title{font-size:20px}}'
+    ].join('');
+    var style = document.createElement('style');
+    style.id = 'AJW-REPRICING-STYLES';
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+  function aRepricingProductCatalog(){
+    var rows = [];
+    try{
+      if(typeof _toolsProductCurrentRows === 'function'){
+        rows = _toolsProductCurrentRows() || [];
+      }else if(typeof _toolsProductSummary === 'function'){
+        rows = ((_toolsProductSummary() || {}).rows) || [];
+      }
+    }catch(e){ rows = []; }
+    return (rows || []).map(function(r, idx){
+      return {
+        id:'repr_prod_' + idx,
+        sku:String(r.sku || '').trim(),
+        productName:String(r.title || r.productName || '').trim(),
+        hpp:aNum(r.avgCost),
+        category:[String(r.category1 || '').trim(), String(r.category2 || '').trim()].filter(Boolean).join(' / '),
+        source:'Rincian Produk',
+        updatedAt:r.updatedAt || r.importedAt || ''
+      };
+    }).filter(function(r){ return r.sku || r.productName || r.hpp; });
+  }
+  function aRepricingCatalogRows(productRows){
+    var imported = (_analyticsRepricing && _analyticsRepricing.bigsellerRows) || [];
+    productRows = productRows || aRepricingProductCatalog();
+    var map = {};
+    imported.forEach(function(r, idx){
+      var key = aRepricingNorm(r.sku) || ('name_' + aRepricingText(r.productName)) || ('imp_' + idx);
+      map[key] = Object.assign({}, r, {source:'BigSeller'});
+    });
+    productRows.forEach(function(r, idx){
+      var key = aRepricingNorm(r.sku) || ('name_' + aRepricingText(r.productName)) || ('prd_' + idx);
+      if(!map[key] || !aNum(map[key].hpp)){
+        map[key] = Object.assign({}, r);
+      }
+    });
+    return Object.keys(map).map(function(k){ return map[k]; });
+  }
+  function aRepricingComputeKey(shopee, imported, productRows, set){
+    var shpHead = shopee[0] || {};
+    var shpTail = shopee[shopee.length - 1] || {};
+    var bsHead = imported[0] || {};
+    var bsTail = imported[imported.length - 1] || {};
+    var prHead = productRows[0] || {};
+    var prTail = productRows[productRows.length - 1] || {};
+    return [
+      shopee.length,
+      imported.length,
+      productRows.length,
+      String(shpHead.sku || ''),
+      String(shpTail.sku || ''),
+      String(bsHead.sku || ''),
+      String(bsTail.sku || ''),
+      String(prHead.sku || ''),
+      String(prTail.sku || ''),
+      aNum(set.adminPct),
+      aNum(set.layananPct),
+      aNum(set.adsPct),
+      aNum(set.processFee),
+      aNum(set.spaylaterPct),
+      aNum(set.extraPct),
+      aNum(set.targetProfitPct),
+      aNum(set.fuzzyThreshold)
+    ].join('|');
+  }
+  function aRepricingCompute(){
+    var state = _analyticsRepricing || aRepricingDefault();
+    var shopee = state.shopeeRows || [];
+    var imported = state.bigsellerRows || [];
+    var productRows = aRepricingProductCatalog();
+    var set = state.settings || aRepricingDefault().settings;
+    var cacheKey = aRepricingComputeKey(shopee, imported, productRows, set);
+    if(window._analyticsRepricingComputeCache && window._analyticsRepricingComputeCache.key === cacheKey){
+      return window._analyticsRepricingComputeCache.data;
+    }
+    var bigseller = aRepricingCatalogRows(productRows);
+    var rows = [];
+    var warnings = [];
+    var insights = {raise:[], stop:[], scale:[]};
+    shopee.forEach(function(sr){
+      var price = aNum(sr.price);
+      var baseQty = Math.max(1, aNum(sr.sold) || (price > 0 && aNum(sr.revenue) > 0 ? aNum(sr.revenue) / Math.max(1, price) : 1));
+      var match = aRepricingMatch(sr, bigseller, aNum(set.fuzzyThreshold) || 80);
+      var br = match.row || {};
+      var hpp = aNum(br.hpp);
+      var hasHpp = !!(match.row && hpp > 0);
+      var processPct = price > 0 ? (aNum(set.processFee) / price) * 100 : 0;
+      var variablePct = aNum(set.adminPct) + aNum(set.layananPct) + aNum(set.adsPct) + aNum(set.spaylaterPct) + aNum(set.extraPct);
+      var totalCostPct = variablePct + processPct;
+      var feeRp = (price * variablePct / 100) + aNum(set.processFee);
+      var profitRp = hasHpp ? (price - hpp - feeRp) : 0;
+      var profitPct = hasHpp && price > 0 ? (profitRp / price) * 100 : 0;
+      var idealDenom = 1 - (aNum(set.targetProfitPct) / 100) - (totalCostPct / 100);
+      var idealPrice = hasHpp && idealDenom > 0 ? (hpp / idealDenom) : 0;
+      var grossMarginPct = hasHpp && price > 0 ? ((price - hpp) / price) * 100 : 0;
+      var nonAdsPct = aNum(set.adminPct) + aNum(set.layananPct) + aNum(set.spaylaterPct) + aNum(set.extraPct) + processPct;
+      var maxAdsSafePct = Math.max(0, grossMarginPct - nonAdsPct);
+      var breakEvenRoas = maxAdsSafePct > 0 ? 100 / maxAdsSafePct : 0;
+      var status = hasHpp ? aRepricingStatus(profitPct) : {label:'HPP BELUM ADA', action:'STOP', color:'#FF8A80'};
+      var currentTotalProfit = profitRp * baseQty;
+      var simRows = [10,20,30,40].map(function(uplift){
+        var scenarioPrice = price * (1 + uplift / 100);
+        var scenarioProcessPct = scenarioPrice > 0 ? (aNum(set.processFee) / scenarioPrice) * 100 : 0;
+        var scenarioTotalPct = variablePct + scenarioProcessPct;
+        var scenarioFeeRp = (scenarioPrice * variablePct / 100) + aNum(set.processFee);
+        var scenarioProfitRp = hasHpp ? (scenarioPrice - hpp - scenarioFeeRp) : 0;
+        var scenarioProfitPct = hasHpp && scenarioPrice > 0 ? (scenarioProfitRp / scenarioPrice) * 100 : 0;
+        var dropPct = uplift;
+        var newQty = Math.max(0, baseQty * (1 - dropPct / 100));
+        var newRevenue = scenarioPrice * newQty;
+        var totalProfit = scenarioProfitRp * newQty;
+        return {
+          upliftPct: uplift,
+          price: scenarioPrice,
+          profitPct: scenarioProfitPct,
+          qty: newQty,
+          revenue: newRevenue,
+          totalProfit: totalProfit
+        };
+      });
+      var options = [{
+        upliftPct:0,
+        price:price,
+        profitPct:profitPct,
+        qty:baseQty,
+        revenue:aNum(sr.revenue) || (price * baseQty),
+        totalProfit:currentTotalProfit,
+        label:'Harga sekarang'
+      }].concat(simRows.map(function(s){
+        return Object.assign({label:'Naik +' + s.upliftPct + '%'}, s);
+      }));
+      var bestOption = options.slice().sort(function(a,b){
+        return aNum(b.totalProfit) - aNum(a.totalProfit);
+      })[0] || options[0];
+      var recommendedPrice = hasHpp ? aNum(bestOption.price) : 0;
+      var recommendedDeltaPct = hasHpp && price > 0 ? ((recommendedPrice - price) / price) * 100 : 0;
+      var warningList = [];
+      if(!hasHpp) warningList.push('HPP BigSeller belum ditemukan');
+      if(totalCostPct > 30) warningList.push('Total biaya >30%');
+      if(profitPct < 10) warningList.push('Profit <10%');
+      if(idealPrice > 0 && price < idealPrice) warningList.push('Harga jual di bawah harga ideal');
+      if(warningList.length){
+        warnings.push({
+          sku: sr.sku || '-',
+          productName: sr.productName || '-',
+          items: warningList
+        });
+      }
+      if(recommendedPrice > price && profitPct < 20) insights.raise.push({sku:sr.sku || '-', name:sr.productName || '-', gap:recommendedPrice - price, target:recommendedPrice});
+      if(profitPct < 10) insights.stop.push({sku:sr.sku || '-', name:sr.productName || '-', profitPct:profitPct});
+      if(profitPct > 20) insights.scale.push({sku:sr.sku || '-', name:sr.productName || '-', profitPct:profitPct});
+      rows.push({
+        shopeeSku: sr.sku || '-',
+        shopeeName: sr.productName || '-',
+        bigsellerSku: br.sku || '-',
+        bigsellerName: br.productName || '-',
+        costSource: br.source || '-',
+        matchStatus: match.status,
+        matchScore: match.score,
+        price: price,
+        hpp: hpp,
+        totalCostPct: totalCostPct,
+        feeRp: feeRp,
+        profitPct: profitPct,
+        profitRp: profitRp,
+        idealPrice: idealPrice,
+        status: status,
+        marginPct: grossMarginPct,
+        breakEvenRoas: breakEvenRoas,
+        maxAdsSafePct: maxAdsSafePct,
+        qty: baseQty,
+        revenue: aNum(sr.revenue) || (price * baseQty),
+        recommendedPrice: recommendedPrice,
+        recommendedDeltaPct: recommendedDeltaPct,
+        recommendationLabel: bestOption.label || 'Harga sekarang',
+        currentTotalProfit: currentTotalProfit,
+        warnings: warningList,
+        simulations: simRows
+      });
+    });
+    rows.sort(function(a,b){ return a.profitPct - b.profitPct; });
+    var result = {
+      rows: rows,
+      warnings: warnings,
+      insights: insights,
+      totals: {
+        shopeeRows: shopee.length,
+        bigsellerRows: bigseller.length,
+        productSourceRows: productRows.length,
+        matched: rows.filter(function(r){ return r.matchStatus !== 'NOT FOUND'; }).length,
+        scale: rows.filter(function(r){ return r.status.action === 'SCALE'; }).length,
+        stop: rows.filter(function(r){ return r.status.action === 'STOP'; }).length,
+        avgProfitPct: rows.length ? rows.reduce(function(t,r){ return t + aNum(r.profitPct); }, 0) / rows.length : 0
+      }
+    };
+    window._analyticsRepricingComputeCache = {key: cacheKey, data: result};
+    return result;
+  }
+  function aRepricingExport(){
+    var computed = aRepricingCompute();
+    if(!computed.rows.length){
+      toast('Belum ada data untuk diexport', 'warn', 2600);
+      return;
+    }
+    var mainRows = [['SKU Shopee','SKU BigSeller','Status Match','Harga Jual','HPP','Biaya Rp','Biaya %','Profit Rp','Profit %','Harga Ideal','Rekomendasi Harga','Decision','Formula Biaya %','Formula Profit %']];
+    computed.rows.forEach(function(r){
+      mainRows.push([r.shopeeSku,r.bigsellerSku,r.matchStatus,Math.round(r.price),Math.round(r.hpp),Math.round(r.feeRp),null,Math.round(r.profitRp),null,Math.round(r.idealPrice),Math.round(r.recommendedPrice),r.status.action,'=F2/D2','= (D2-E2-F2)/D2']);
+    });
+    var simRows = [['SKU Shopee','Skenario Harga','Profit %','Estimasi Penjualan','Estimasi Revenue','Estimasi Profit Total']];
+    computed.rows.forEach(function(r){
+      (r.simulations || []).forEach(function(s){
+        simRows.push([r.shopeeSku,'+' + s.upliftPct + '%',s.profitPct.toFixed(2),Math.round(s.qty * 100) / 100,Math.round(s.revenue),Math.round(s.totalProfit)]);
+      });
+    });
+    aEnsureXLSX(function(){
+      if(window.XLSX){
+        var wb = window.XLSX.utils.book_new();
+        var wsMain = window.XLSX.utils.aoa_to_sheet(mainRows);
+        computed.rows.forEach(function(r, idx){
+          var rowNum = idx + 2;
+          wsMain['G' + rowNum] = {t:'n', f:'F' + rowNum + '/D' + rowNum, z:'0.00%'};
+          wsMain['I' + rowNum] = {t:'n', f:'(D' + rowNum + '-E' + rowNum + '-F' + rowNum + ')/D' + rowNum, z:'0.00%'};
+          wsMain['M' + rowNum] = {t:'s', v:'=F' + rowNum + '/D' + rowNum};
+          wsMain['N' + rowNum] = {t:'s', v:'=(D' + rowNum + '-E' + rowNum + '-F' + rowNum + ')/D' + rowNum};
+        });
+        wsMain['!cols'] = [{wch:18},{wch:18},{wch:14},{wch:14},{wch:14},{wch:14},{wch:12},{wch:14},{wch:12},{wch:14},{wch:18},{wch:12},{wch:18},{wch:22}];
+        window.XLSX.utils.book_append_sheet(wb, wsMain, 'Tabel Utama');
+        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(simRows), 'Simulasi');
+        window.XLSX.writeFile(wb, 'repricing_profit_analysis.xlsx');
+        return;
+      }
+      var csv = [mainRows, [], simRows].map(function(block){
+        return block.map(function(row){ return row.join(','); }).join('\n');
+      }).join('\n');
+      var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'repricing_profit_analysis.csv';
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+    });
+  }
+  function aRepricingChip(text, color, bg){
+    return '<span class="repr-pill" style="background:' + (bg || 'rgba(255,255,255,.06)') + ';color:' + (color || '#fff') + '">' + aEsc(text) + '</span>';
+  }
+  function aRepricingTab(){
+    aRepricingEnsureStyles();
+    var data = aRepricingCompute();
+    var set = _analyticsRepricing.settings || aRepricingDefault().settings;
+    var rows = data.rows || [];
+    var h = '<div class="repr-shell w-full min-h-screen repr-main-bg">';
+    h += '<div class="repr-card p-6"><div class="repr-header"><div><div class="repr-title text-gray-800">Repricing & Profit Analysis Engine</div><div class="repr-subtitle">Profit real setelah fee Shopee + iklan, rekomendasi harga optimal, dan decision tool untuk SCALE / HOLD / STOP.</div></div><div class="repr-actions"><button class="btnsm" onclick="aRepricingImport(\'shopee\')">Import Shopee</button><button class="btnsm" onclick="aRepricingImport(\'bigseller\')">Import BigSeller</button><button class="btnsm" onclick="aRepricingExport()">Export Hasil</button><button class="btnsm" onclick="aRepricingResetData()">Reset</button></div></div></div>';
+
+    h += '<div class="repr-kpi-grid grid grid-cols-12 gap-4">';
+    [
+      ['SKU Shopee', data.totals.shopeeRows, 'belum import', 'repr-warn'],
+      ['SKU BigSeller', data.totals.bigsellerRows, _analyticsRepricing.bigsellerFileName || 'belum import', 'repr-ok'],
+      ['Rincian Produk', data.totals.productSourceRows, 'HPP fallback otomatis', 'text-gray-800'],
+      ['Matched', data.totals.matched, 'AI SKU matching', 'repr-ok'],
+      ['Layak Scale', data.totals.scale, 'profit >20%', 'repr-ok'],
+      ['Avg Profit', aRepricingFmtPct(data.totals.avgProfitPct), 'rata-rata profit bersih', (aNum(data.totals.avgProfitPct)>20?'repr-ok':(aNum(data.totals.avgProfitPct)>=10?'repr-warn':'repr-bad'))]
+    ].forEach(function(card){
+      h += '<div class="repr-kpi"><div class="repr-kpi-lbl">' + aEsc(card[0]) + '</div><div class="repr-kpi-val '+card[3]+'">' + aEsc(String(card[1])) + '</div><div class="repr-kpi-note">' + aEsc(card[2]) + '</div></div>';
+    });
+    h += '</div>';
+
+    h += '<div class="repr-dashboard grid grid-cols-12 gap-4">';
+    h += '<div class="repr-card repr-col-12 p-4"><div class="repr-header"><div><div class="repr-section-title">Parameter Biaya Shopee</div><div class="repr-section-sub">Dipakai untuk menghitung profit real dan rekomendasi harga. Data HPP otomatis membaca tab Rincian Produk bila SKU cocok.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">' + aRepricingChip('Full width', '#d6e4fa', '#0b1220') + aRepricingChip('Sticky table', '#d6e4fa', '#0b1220') + aRepricingChip('Mobile stack', '#d6e4fa', '#0b1220') + '</div></div><div class="repr-input-grid">';
+    h += aInput('Admin %','AR-SET-ADMIN','number',set.adminPct,'0','step="0.1"');
+    h += aInput('Layanan %','AR-SET-LAYANAN','number',set.layananPct,'0','step="0.1"');
+    h += aInput('Ads %','AR-SET-ADS','number',set.adsPct,'0','step="0.1"');
+    h += aInput('Biaya Proses Rp','AR-SET-PROCESS','number',set.processFee,'0');
+    h += aInput('SPayLater %','AR-SET-SPAY','number',set.spaylaterPct,'0','step="0.1"');
+    h += aInput('Program Tambahan %','AR-SET-EXTRA','number',set.extraPct,'0','step="0.1"');
+    h += aInput('Target Profit %','AR-SET-TARGET','number',set.targetProfitPct,'0','step="0.1"');
+    h += aInput('Fuzzy Threshold %','AR-SET-FUZZY','number',set.fuzzyThreshold,'80','step="1"');
+    h += '</div><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btns" onclick="aRepricingDownloadTemplate(\'shopee\')">Template Shopee</button><button class="btns" onclick="aRepricingDownloadTemplate(\'bigseller\')">Template BigSeller</button></div><button class="btnp" onclick="aRepricingApplySettings()">Simpan Setting</button></div></div>';
+
+    h += '<div class="repr-card repr-col-8 p-4"><div class="repr-section-title" style="margin-bottom:10px">Insight Otomatis</div><div style="display:grid;gap:12px">';
+    h += '<div><div style="font-size:11px;font-weight:800;color:#f59e0b;margin-bottom:6px">Produk yang harus dinaikkan harga</div><div style="display:grid;gap:6px">' + (data.insights.raise.length ? data.insights.raise.slice(0,6).map(function(x){ return '<div style="font-size:11px;color:#c8d7ed">• ' + aEsc(x.sku) + ' - ' + aEsc(x.name) + ' | target ' + aRepricingMoney(x.target) + ' | gap ' + aRepricingMoney(x.gap) + '</div>'; }).join('') : '<div style="font-size:11px;color:#8ca0bb">- tidak ada prioritas naik harga saat ini</div>') + '</div></div>';
+    h += '<div><div style="font-size:11px;font-weight:800;color:#ef4444;margin-bottom:6px">Produk yang harus dimatikan</div><div style="display:grid;gap:6px">' + (data.insights.stop.length ? data.insights.stop.slice(0,6).map(function(x){ return '<div style="font-size:11px;color:#c8d7ed">• ' + aEsc(x.sku) + ' - ' + aEsc(x.name) + ' | profit ' + aRepricingFmtPct(x.profitPct) + '</div>'; }).join('') : '<div style="font-size:11px;color:#8ca0bb">- tidak ada kandidat stop</div>') + '</div></div>';
+    h += '<div><div style="font-size:11px;font-weight:800;color:#22c55e;margin-bottom:6px">Produk yang layak di-scale</div><div style="display:grid;gap:6px">' + (data.insights.scale.length ? data.insights.scale.slice(0,6).map(function(x){ return '<div style="font-size:11px;color:#c8d7ed">• ' + aEsc(x.sku) + ' - ' + aEsc(x.name) + ' | profit ' + aRepricingFmtPct(x.profitPct) + '</div>'; }).join('') : '<div style="font-size:11px;color:#8ca0bb">- belum ada produk di atas ambang scale</div>') + '</div></div>';
+    h += '</div></div>';
+    h += '<div class="repr-card repr-col-4 p-4"><div class="repr-section-title" style="margin-bottom:10px">Warning System</div><div style="display:grid;gap:8px">' + (data.warnings.length ? data.warnings.slice(0,8).map(function(w){ return '<div class="repr-alert"><div style="font-size:11px;font-weight:700;color:#f8fafc">' + aEsc(w.sku) + ' - ' + aEsc(w.productName) + '</div><div style="font-size:10px;color:#f59e0b;margin-top:4px">' + aEsc(w.items.join(' | ')) + '</div></div>'; }).join('') : '<div style="font-size:11px;color:#8ca0bb">Tidak ada warning aktif.</div>') + '</div></div>';
+
+    h += '<div class="repr-card repr-col-12 p-4"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div><div class="repr-section-title">Tabel Utama</div><div class="repr-section-sub">Analisa profit real, biaya, rekomendasi harga, dan keputusan SCALE / HOLD / STOP.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">' + aRepricingChip(rows.length + ' SKU', '#d6e4fa', '#0b1220') + '</div></div><div class="overflow-x-auto"><table class="repr-table min-w-full"><thead><tr><th>SKU Shopee</th><th>SKU BigSeller</th><th>Status Match</th><th>Harga Jual</th><th>HPP</th><th>Total Biaya (%)</th><th>Biaya (Rp)</th><th>Profit (%)</th><th>Profit (Rp)</th><th>Harga Ideal</th><th>Rekomendasi Harga</th><th>Status</th><th>Margin Kotor</th><th>BE ROAS</th><th>Max Ads Aman</th></tr></thead><tbody>';
+    if(!rows.length) h += aEmpty('Import file Shopee dan BigSeller untuk mulai analisa repricing.');
+    rows.forEach(function(r){
+      var matchColor = r.matchStatus === 'MATCH' ? '#16a34a' : (r.matchStatus === 'PARTIAL MATCH' ? '#d97706' : '#dc2626');
+      var profitColor = r.profitPct > 20 ? '#16a34a' : (r.profitPct >= 10 ? '#d97706' : '#dc2626');
+      h += '<tr><td><div style="font-weight:800;color:#f8fafc">' + aEsc(r.shopeeSku) + '</div><div style="font-size:10px;color:#8ca0bb;margin-top:3px;min-width:230px;white-space:normal">' + aEsc(r.shopeeName) + '</div></td><td><div style="font-weight:800;color:#f8fafc">' + aEsc(r.bigsellerSku) + '</div><div style="font-size:10px;color:#8ca0bb;margin-top:3px;min-width:230px;white-space:normal">' + aEsc(r.bigsellerName) + '</div><div style="font-size:10px;color:#6f89aa;margin-top:3px">source: ' + aEsc(r.costSource) + '</div></td><td><span class="repr-pill" style="color:' + matchColor + ';background:#0b1220">' + aEsc(r.matchStatus) + ' • ' + aEsc(String(r.matchScore)) + '%</span></td><td>' + aRepricingMoney(r.price) + '</td><td>' + aRepricingMoney(r.hpp) + '</td><td>' + aRepricingFmtPct(r.totalCostPct) + '</td><td>' + aRepricingMoney(r.feeRp) + '</td><td style="font-weight:800;color:' + profitColor + '">' + aRepricingFmtPct(r.profitPct) + '</td><td style="font-weight:800;color:' + profitColor + '">' + aRepricingMoney(r.profitRp) + '</td><td>' + aRepricingMoney(r.idealPrice) + '</td><td><div style="font-weight:800;color:#f8fafc">' + aRepricingMoney(r.recommendedPrice) + '</div><div style="font-size:10px;color:#8ca0bb;margin-top:3px;white-space:normal">' + aEsc(r.recommendationLabel) + ' • ' + (r.recommendedDeltaPct >= 0 ? '+' : '') + aRepricingFmtPct(r.recommendedDeltaPct) + '</div></td><td><span class="repr-pill" style="color:' + r.status.color + ';background:#0b1220">' + aEsc(r.status.action) + '</span></td><td>' + aRepricingFmtPct(r.marginPct) + '</td><td>' + (r.breakEvenRoas ? (Math.round(r.breakEvenRoas * 100) / 100).toFixed(2) + 'x' : '-') + '</td><td>' + aRepricingFmtPct(r.maxAdsSafePct) + '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+    h += '<div class="repr-card repr-col-12 p-4"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div><div class="repr-section-title">Tabel Simulasi</div><div class="repr-section-sub">Skenario +10% sampai +40% untuk mengecek estimasi profit total.</div></div>' + aRepricingChip('4 skenario / SKU', '#d6e4fa', '#0b1220') + '</div><div class="overflow-x-auto"><table class="repr-table min-w-full"><thead><tr><th>SKU</th><th>Harga Skenario</th><th>Profit %</th><th>Estimasi Penjualan</th><th>Estimasi Revenue</th><th>Estimasi Profit Total</th><th>Decision Context</th></tr></thead><tbody>';
+    if(!rows.length) h += aEmpty('Belum ada SKU untuk disimulasikan.');
+    rows.forEach(function(r){
+      (r.simulations || []).forEach(function(s){
+        var simColor = s.profitPct > 20 ? '#16a34a' : (s.profitPct >= 10 ? '#d97706' : '#dc2626');
+        h += '<tr><td><div style="font-weight:800;color:#f8fafc">' + aEsc(r.shopeeSku) + '</div><div style="font-size:10px;color:#8ca0bb;margin-top:3px;white-space:normal">' + aEsc(r.shopeeName) + '</div></td><td>' + aRepricingMoney(s.price) + ' <span style="font-size:10px;color:#60a5fa">(' + '+' + s.upliftPct + '%)</span></td><td style="font-weight:800;color:' + simColor + '">' + aRepricingFmtPct(s.profitPct) + '</td><td>' + (Math.round(s.qty * 100) / 100) + '</td><td>' + aRepricingMoney(s.revenue) + '</td><td style="font-weight:800;color:' + simColor + '">' + aRepricingMoney(s.totalProfit) + '</td><td style="font-size:10px;color:#8ca0bb;white-space:normal">Current ' + aRepricingFmtPct(r.profitPct) + ' • rekomendasi ' + aRepricingMoney(r.recommendedPrice) + '</td></tr>';
+      });
+    });
+    h += '</tbody></table></div></div>';
+    h += '</div>';
+    h += '</div>';
+    return h;
+  }
+  window.aRepricingImport = aRepricingImport;
+  window.aRepricingApplySettings = aRepricingApplySettings;
+  window.aRepricingDownloadTemplate = aRepricingDownloadTemplate;
+  window.aRepricingResetData = aRepricingResetData;
+  window.aRepricingExport = aRepricingExport;
+
   function aDeleteCustomerSession(sessionId){
     confirmDelete('Hapus seluruh data dari sesi upload ini?', function(){
       _analyticsData.customers = (_analyticsData.customers || []).filter(function(r){ return r.uploadSessionId !== sessionId; });
@@ -1958,24 +2606,41 @@
     if(typeof _toolsProductSummary!=='function') return '<div class="card"><div style="font-size:12px;color:var(--tx2)">Modul rincian produk belum siap.</div></div>';
     var ps=_toolsProductSummary();
     var series=_toolsProductMonthlySeries();
+    var monthlyDiff=(typeof _toolsProductMonthlyDiffSeries==='function')?_toolsProductMonthlyDiffSeries():[];
     var ui=_toolsProductUi();
     var changes=_toolsProductModalChanges();
     var cat1Opts=_toolsProductCategoryOptions(1);
     var cat2Opts=_toolsProductCategoryOptions(2);
     var masterCount=_toolsProductMasterRows().length;
+    var trendTop=(ps.rows||[]).slice().sort(function(a,b){ return Math.max(aNum(b.soldQty),aNum(b.dailySales)) - Math.max(aNum(a.soldQty),aNum(a.dailySales)); })[0] || null;
+    function sortHdr(label, field){
+      var active=ui.headerSortField===field;
+      var dir=active?(ui.headerSortDir==='asc'?' ↑':' ↓'):'';
+      return '<button class="btnsm" onclick="_toolsProductSortByHeader(\''+aAttr(field)+'\')" style="padding:2px 6px;border:1px solid rgba(255,255,255,.1);background:'+(active?'rgba(240,197,106,.12)':'rgba(255,255,255,.03)')+';color:'+(active?'#F0C56A':'#dce7f1')+';font-size:10px">'+label+dir+'</button>';
+    }
     var prod='';
-    prod+='<div class="card" style="margin-bottom:12px;background:#080808;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:800;color:#fff">Rincian Produk</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Database SKU produk untuk memantau stok, modal, kategori, dan rata-rata penjualan harian. Template acuan akan menjadi basis baku, sedangkan import regular hanya memperbarui SKU yang sudah ada di template tersebut.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btnsm" onclick="_toolsProductDownloadTemplate()">Template Import</button><button class="btns" onclick="_toolsProductImportMasterFile()">Upload Template Acuan</button><button class="btns" onclick="_toolsProductImportFile()">Import Update</button>'+(ui.edit?'<button class="btnp" onclick="_toolsProductSaveTableEdits()">Simpan Edit</button><button class="btnsm" onclick="_toolsProductToggleEditMode(false)">Batal</button>':'<button class="btnsm" onclick="_toolsProductToggleEditMode(true)">Mode Edit</button>')+'<button class="btnsm" onclick="confirmDelete(\'Hapus seluruh database rincian produk?\',function(){_toolProductRows=[];_toolsSave();_toolsProductRefreshView()})">Hapus Semua</button></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">Template acuan: '+masterCount+' SKU</span><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">Baris tampil: '+ps.rows.length+'</span></div></div>';
-    prod+='<div style="display:grid;grid-template-columns:repeat(4,minmax(170px,1fr));gap:10px;margin-bottom:12px">';
-    [['Total Stok',fmt(ps.totalStock),'Akumulasi stok aktif','#8FD0FF'],['Total Modal',_toolsMoney(ps.totalModal),'Modal x total stok','#F0C56A'],['Rata-rata Penjualan Harian',fmt(Math.round(ps.avgDaily*100)/100),'Rerata estimasi per produk','#A7F3B6'],['Kategori Terlaris',esc(ps.topCategory||'-'),fmt(Math.round(ps.topCategoryDaily*100)/100)+' estimasi / hari','#D7E1EA']].forEach(function(card){
+    prod+='<div class="card" style="margin-bottom:12px;background:#080808;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap"><div><div style="font-size:14px;font-weight:800;color:#fff">Rincian Produk</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Database SKU produk untuk memantau stok, modal, kategori, dan rata-rata penjualan harian. Template acuan akan menjadi basis baku, sedangkan import regular hanya memperbarui SKU yang sudah ada di template tersebut.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btnsm" onclick="_toolsProductDownloadTemplate()">Template Import</button><button class="btns" onclick="_toolsProductImportMasterFile()">Upload Template Acuan</button><button class="btns" onclick="_toolsProductImportFile()">Import Update</button>'+(ui.edit?'<button class="btnp" onclick="_toolsProductSaveTableEdits()">Simpan Edit</button><button class="btnsm" onclick="_toolsProductToggleEditMode(false)">Batal</button>':'<button class="btnsm" onclick="_toolsProductToggleEditMode(true)">Mode Edit</button>')+'<button class="btnsm" onclick="confirmDelete(\'Hapus seluruh database rincian produk?\',function(){_toolProductRows=[];_toolsSave();_toolsProductRefreshView()})">Hapus Semua</button></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">Template acuan: '+masterCount+' SKU</span><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">Baris tampil: '+ps.rows.length+'</span><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">Storage: '+aEsc((typeof _toolProductStorageMode!=='undefined'&&_toolProductStorageMode)||'local')+'</span></div></div>';
+    prod+='<div style="display:grid;grid-template-columns:repeat(5,minmax(170px,1fr));gap:10px;margin-bottom:12px">';
+    [
+      ['Total Stok',fmt(ps.totalStock),'Akumulasi stok aktif','#8FD0FF'],
+      ['Total Modal',_toolsMoney(ps.totalModal),'Modal x total stok','#F0C56A'],
+      ['Rata-rata Penjualan Harian',fmt(Math.round(ps.avgDaily*100)/100),'Rerata estimasi per produk','#A7F3B6'],
+      ['Kategori Terlaris',esc(ps.topCategory||'-'),fmt(Math.round(ps.topCategoryDaily*100)/100)+' estimasi / hari','#D7E1EA'],
+      ['Produk Terlaris',esc((trendTop&& (trendTop.title||trendTop.sku)) || ps.topProduct || '-'),'Terjual est. '+fmt(Math.round(aNum((trendTop&&trendTop.soldQty)||0)))+' • Daily '+fmt(Math.round(aNum((trendTop&&trendTop.dailySales)||0)*100)/100),'#FFB84D']
+    ].forEach(function(card){
       prod+='<div class="card" style="background:#050505;border:1px solid rgba(255,255,255,.08);padding:12px 14px"><div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.62)">'+card[0]+'</div><div style="font-size:24px;font-weight:900;color:'+card[3]+';margin-top:6px;word-break:break-word">'+card[1]+'</div><div style="font-size:11px;color:var(--tx2);margin-top:5px">'+card[2]+'</div></div>';
     });
     prod+='</div>';
+    prod+='<div class="card" style="margin-bottom:12px;background:#050505;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:#fff">Analisis Selisih Stok</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Bandingkan stok acuan template dengan stok update terbaru untuk tahu produk selisih dan produk terjual.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="'+(ui.stockView==='all'?'btnp':'btns')+'" onclick="_toolsProductSetStockView('+"'all'"+')" style="'+(ui.stockView==='all'?'background:#8C5E16;border-color:#8C5E16':'')+'">Semua</button><button class="'+(ui.stockView==='diff'?'btnp':'btns')+'" onclick="_toolsProductSetStockView('+"'diff'"+')" style="'+(ui.stockView==='diff'?'background:#8C5E16;border-color:#8C5E16':'')+'">Ada Selisih</button><button class="'+(ui.stockView==='sold'?'btnp':'btns')+'" onclick="_toolsProductSetStockView('+"'sold'"+')" style="'+(ui.stockView==='sold'?'background:#8C5E16;border-color:#8C5E16':'')+'">Terjual (Selisih -)</button><button class="btnsm" onclick="_toolsProductExportDiffExcel()">Export to Excel</button></div></div></div>';
     prod+='<div class="card" style="margin-bottom:12px;background:#050505;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:#fff">Trend Total Modal Stok</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Membandingkan total modal stok berdasarkan bulan import terakhir per SKU.</div></div><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">'+(series.length?series.length:0)+' bulan</span></div><div style="height:220px;margin-top:10px"><canvas id="TOOLS-PRODUCT-CHART"></canvas></div></div>';
+    prod+='<div class="card" style="margin-bottom:12px;background:#050505;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:#fff">Selisih Bulanan (Acuan vs Update)</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Setiap bulan menampilkan selisih stok dan estimasi produk terjual dibanding template acuan.</div></div><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">'+monthlyDiff.length+' bulan</span></div><div style="overflow:auto;margin-top:10px"><table class="tbl"><thead><tr><th>Bulan</th><th>SKU Aktif</th><th>Stok Acuan</th><th>Stok Update</th><th>Selisih</th><th>Terjual (est)</th></tr></thead><tbody>'+(monthlyDiff.length?monthlyDiff.map(function(m){ return '<tr><td>'+aEsc(m.label||m.month||'-')+'</td><td>'+fmt(m.skuCount||0)+'</td><td>'+fmt(m.totalBaseStock||0)+'</td><td>'+fmt(m.totalStock||0)+'</td><td style="color:'+(aNum(m.stockDelta)>=0?'#A7F3B6':'#FF8A80')+';font-weight:800">'+(aNum(m.stockDelta)>=0?'+':'')+fmt(Math.round(aNum(m.stockDelta)))+'</td><td style="font-weight:800;color:#F0C56A">'+fmt(Math.round(aNum(m.totalSold)))+'</td></tr>'; }).join(''):'<tr><td colspan="6" style="text-align:center;color:var(--tx2)">Belum ada histori update bulanan.</td></tr>')+'</tbody></table></div></div>';
     prod+='<div class="card" style="margin-bottom:12px;background:#050505;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div style="font-size:13px;font-weight:800;color:#fff">Perubahan Modal Produk</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Riwayat perubahan modal per SKU dari import atau edit manual terbaru.</div></div><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">'+changes.length+' perubahan</span></div><div style="margin-top:10px;display:grid;gap:8px">'+(changes.length?changes.slice(0,8).map(function(ch){ return '<div style="display:grid;grid-template-columns:minmax(180px,1.2fr) repeat(3,minmax(110px,.7fr)) minmax(150px,.8fr);gap:10px;align-items:center;padding:10px 12px;border-radius:12px;background:#070707;border:1px solid rgba(255,255,255,.06)"><div><div style="font-size:12px;font-weight:800;color:#fff">'+esc(ch.sku||'-')+'</div><div style="font-size:11px;color:var(--tx2);margin-top:2px">'+esc(ch.title||'-')+'</div></div><div><div style="font-size:10px;color:var(--tx2);text-transform:uppercase">Modal Lama</div><div style="font-size:12px;font-weight:700;color:#D7E1EA">'+_toolsMoney(ch.from)+'</div></div><div><div style="font-size:10px;color:var(--tx2);text-transform:uppercase">Modal Baru</div><div style="font-size:12px;font-weight:700;color:#fff">'+_toolsMoney(ch.to)+'</div></div><div><div style="font-size:10px;color:var(--tx2);text-transform:uppercase">Delta</div><div style="font-size:12px;font-weight:800;color:'+(ch.delta>=0?'#A7F3B6':'#FF8A80')+'">'+(ch.delta>=0?'+':'-')+_toolsMoney(Math.abs(ch.delta))+' ('+(ch.pct>=0?'+':'')+fmt(Math.round(ch.pct*100)/100)+'%)</div></div><div style="font-size:11px;color:var(--tx2)">'+esc(_toolsProductFormatDate(ch.updatedAt))+'</div></div>'; }).join(''):'<div style="padding:12px;border:1px dashed rgba(255,255,255,.12);border-radius:12px;color:var(--tx2);font-size:11px">Belum ada perubahan modal yang tercatat. Gunakan import update atau edit manual untuk mencatat histori modal.</div>')+'</div></div>';
-    prod+='<div class="card" style="background:#070707;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div><div style="font-size:13px;font-weight:800;color:#fff">Daftar Produk Aktif</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Snapshot terbaru per SKU dari template acuan dan histori pembaruan yang pernah Anda masukkan.</div></div><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">'+ps.rows.length+' SKU aktif</span></div><div style="display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin-bottom:10px"><div><label class="lbl">Sort</label><select class="fi" onchange="_toolsProductSetSort(this.value)"><option value="updated_desc"'+(ui.sort==='updated_desc'?' selected':'')+'>Terbaru Diperbarui</option><option value="sku_asc"'+(ui.sort==='sku_asc'?' selected':'')+'>SKU A-Z</option><option value="title_asc"'+(ui.sort==='title_asc'?' selected':'')+'>Nama Produk A-Z</option><option value="stock_desc"'+(ui.sort==='stock_desc'?' selected':'')+'>Stok Tertinggi</option><option value="modal_desc"'+(ui.sort==='modal_desc'?' selected':'')+'>Modal Tertinggi</option><option value="daily_desc"'+(ui.sort==='daily_desc'?' selected':'')+'>Penjualan Harian Tertinggi</option></select></div><div><label class="lbl">Kategori 1</label><select class="fi" onchange="_toolsProductSetCategory(1,this.value)"><option value="all"'+(ui.cat1==='all'?' selected':'')+'>Semua Kategori 1</option><option value="__NONE__"'+(ui.cat1==='__NONE__'?' selected':'')+'>Tanpa Kategori</option>'+cat1Opts.filter(function(v){ return v!=='__NONE__'; }).map(function(v){ return '<option value="'+escAttr(v)+'"'+(ui.cat1===v?' selected':'')+'>'+esc(v)+'</option>'; }).join('')+'</select></div><div><label class="lbl">Kategori 2</label><select class="fi" onchange="_toolsProductSetCategory(2,this.value)"><option value="all"'+(ui.cat2==='all'?' selected':'')+'>Semua Kategori 2</option><option value="__NONE__"'+(ui.cat2==='__NONE__'?' selected':'')+'>Tanpa Kategori</option>'+cat2Opts.filter(function(v){ return v!=='__NONE__'; }).map(function(v){ return '<option value="'+escAttr(v)+'"'+(ui.cat2===v?' selected':'')+'>'+esc(v)+'</option>'; }).join('')+'</select></div><div style="display:flex;align-items:end;justify-content:flex-end"><button class="btnsm" onclick="_toolsProductToggleEditMode('+(ui.edit?'false':'true')+')">'+(ui.edit?'Batalkan Edit':'Edit Tabel')+'</button></div></div><div style="overflow:auto"><table class="tbl"><thead><tr><th>Tautan Gambar</th><th>Nomor SKU</th><th>Judul</th><th>Total Stok</th><th>Perkiraan Penjualan Harian</th><th>Rata-Rata Modal Bobot</th><th>Kategori Pertama</th><th>Kategori Kedua</th><th>Terakhir Diperbarui</th></tr></thead><tbody>';
-    if(!ps.rows.length) prod+='<tr><td colspan="9" style="text-align:center;color:var(--tx2)">'+(masterCount?'Belum ada data sesuai filter kategori atau sort yang dipilih.':'Belum ada data produk. Upload template acuan dulu untuk mulai membangun database produk.')+'</td></tr>';
+    prod+='<div class="card" style="background:#070707;border:1px solid rgba(255,255,255,.08)"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div><div style="font-size:13px;font-weight:800;color:#fff">Daftar Produk Aktif</div><div style="font-size:11px;color:var(--tx2);margin-top:4px">Snapshot terbaru per SKU dari template acuan dan histori pembaruan yang pernah Anda masukkan.</div></div><span class="chip" style="background:#050505;border:1px solid rgba(255,255,255,.08);color:#D7E1EA">'+ps.rows.length+' SKU aktif</span></div><div style="display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px;margin-bottom:10px"><div><label class="lbl">Sort</label><select class="fi" onchange="_toolsProductSetSort(this.value)"><option value="updated_desc"'+(ui.sort==='updated_desc'?' selected':'')+'>Terbaru Diperbarui</option><option value="sku_asc"'+(ui.sort==='sku_asc'?' selected':'')+'>SKU A-Z</option><option value="title_asc"'+(ui.sort==='title_asc'?' selected':'')+'>Nama Produk A-Z</option><option value="stock_desc"'+(ui.sort==='stock_desc'?' selected':'')+'>Stok Tertinggi</option><option value="sold_desc"'+(ui.sort==='sold_desc'?' selected':'')+'>Terjual Tertinggi</option><option value="delta_desc"'+(ui.sort==='delta_desc'?' selected':'')+'>Selisih Terbesar</option><option value="modal_desc"'+(ui.sort==='modal_desc'?' selected':'')+'>Modal Tertinggi</option><option value="daily_desc"'+(ui.sort==='daily_desc'?' selected':'')+'>Penjualan Harian Tertinggi</option></select></div><div><label class="lbl">Kategori 1</label><select class="fi" onchange="_toolsProductSetCategory(1,this.value)"><option value="all"'+(ui.cat1==='all'?' selected':'')+'>Semua Kategori 1</option><option value="__NONE__"'+(ui.cat1==='__NONE__'?' selected':'')+'>Tanpa Kategori</option>'+cat1Opts.filter(function(v){ return v!=='__NONE__'; }).map(function(v){ return '<option value="'+escAttr(v)+'"'+(ui.cat1===v?' selected':'')+'>'+esc(v)+'</option>'; }).join('')+'</select></div><div><label class="lbl">Kategori 2</label><select class="fi" onchange="_toolsProductSetCategory(2,this.value)"><option value="all"'+(ui.cat2==='all'?' selected':'')+'>Semua Kategori 2</option><option value="__NONE__"'+(ui.cat2==='__NONE__'?' selected':'')+'>Tanpa Kategori</option>'+cat2Opts.filter(function(v){ return v!=='__NONE__'; }).map(function(v){ return '<option value="'+escAttr(v)+'"'+(ui.cat2===v?' selected':'')+'>'+esc(v)+'</option>'; }).join('')+'</select></div><div style="display:flex;align-items:end;justify-content:flex-end"><button class="btnsm" onclick="_toolsProductToggleEditMode('+(ui.edit?'false':'true')+')">'+(ui.edit?'Batalkan Edit':'Edit Tabel')+'</button></div></div><div style="overflow:auto"><table class="tbl"><thead><tr><th>Tautan Gambar</th><th>'+sortHdr('Nomor SKU','sku')+'</th><th>'+sortHdr('Judul','title')+'</th><th>'+sortHdr('Stok Acuan','baseStock')+'</th><th>'+sortHdr('Stok Update','stock')+'</th><th>'+sortHdr('Selisih','delta')+'</th><th>'+sortHdr('Terjual','sold')+'</th><th>'+sortHdr('Penjualan Harian','daily')+'</th><th>'+sortHdr('Rata-Rata Modal','modal')+'</th><th>Kategori Pertama</th><th>Kategori Kedua</th><th>'+sortHdr('Terakhir Diperbarui','updatedAt')+'</th></tr></thead><tbody>';
+    if(!ps.rows.length) prod+='<tr><td colspan="12" style="text-align:center;color:var(--tx2)">'+(masterCount?'Belum ada data sesuai filter kategori atau sort yang dipilih.':'Belum ada data produk. Upload template acuan dulu untuk mulai membangun database produk.')+'</td></tr>';
     ps.rows.forEach(function(r){
-      prod+='<tr><td>'+(ui.edit?'<input id="TP-EDIT-IMG-'+r.id+'" class="fi" value="'+escAttr(r.imageUrl||'')+'" placeholder="https://...">':(r.imageUrl?'<button class="btnsm" onclick="_toolsProductOpenImage(\''+String(r.imageUrl||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\',\''+String(r.title||r.sku||'Produk').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">Buka</button>':'-'))+'</td><td style="font-weight:700">'+(ui.edit?'<input id="TP-EDIT-SKU-'+r.id+'" class="fi" value="'+escAttr(r.sku||'')+'" placeholder="SKU">':esc(r.sku||'-'))+'</td><td style="min-width:260px">'+(ui.edit?'<input id="TP-EDIT-TITLE-'+r.id+'" class="fi" value="'+escAttr(r.title||'')+'" placeholder="Nama produk">':esc(r.title||'-'))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-STOCK-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.totalStock)))+'">':fmt(r.totalStock))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-DAILY-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.dailySales)))+'">':fmt(Math.round(_num(r.dailySales)*100)/100))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-COST-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.avgCost)))+'">':_toolsMoney(r.avgCost))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-CAT1-'+r.id+'" class="fi" value="'+escAttr(r.category1||'')+'" placeholder="Kategori 1">':esc(r.category1||'-'))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-CAT2-'+r.id+'" class="fi" value="'+escAttr(r.category2||'')+'" placeholder="Kategori 2">':esc(r.category2||'-'))+'</td><td style="white-space:nowrap">'+esc(_toolsProductFormatDate(r.updatedAt||r.importedAt))+'</td></tr>';
+      var delta=aNum(r.stockDelta);
+      var deltaColor=delta===0?'#D7E1EA':(delta>0?'#A7F3B6':'#FF8A80');
+      prod+='<tr><td>'+(ui.edit?'<input id="TP-EDIT-IMG-'+r.id+'" class="fi" value="'+escAttr(r.imageUrl||'')+'" placeholder="https://...">':(r.imageUrl?'<button class="btnsm" onclick="_toolsProductOpenImage(\''+String(r.imageUrl||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\',\''+String(r.title||r.sku||'Produk').replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">Buka</button>':'-'))+'</td><td style="font-weight:700">'+(ui.edit?'<input id="TP-EDIT-SKU-'+r.id+'" class="fi" value="'+escAttr(r.sku||'')+'" placeholder="SKU">':esc(r.sku||'-'))+'</td><td style="min-width:260px">'+(ui.edit?'<input id="TP-EDIT-TITLE-'+r.id+'" class="fi" value="'+escAttr(r.title||'')+'" placeholder="Nama produk">':esc(r.title||'-'))+'</td><td>'+fmt(aNum(r.baseStock))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-STOCK-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.totalStock)))+'">':fmt(r.totalStock))+'</td><td style="font-weight:800;color:'+deltaColor+'">'+(delta>0?'+':'')+fmt(Math.round(delta))+'</td><td style="font-weight:800;color:#F0C56A">'+fmt(Math.round(aNum(r.soldQty)))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-DAILY-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.dailySales)))+'">':fmt(Math.round(_num(r.dailySales)*100)/100))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-COST-'+r.id+'" class="fi" type="number" value="'+escAttr(String(_num(r.avgCost)))+'">':_toolsMoney(r.avgCost))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-CAT1-'+r.id+'" class="fi" value="'+escAttr(r.category1||'')+'" placeholder="Kategori 1">':esc(r.category1||'-'))+'</td><td>'+(ui.edit?'<input id="TP-EDIT-CAT2-'+r.id+'" class="fi" value="'+escAttr(r.category2||'')+'" placeholder="Kategori 2">':esc(r.category2||'-'))+'</td><td style="white-space:nowrap">'+esc(_toolsProductFormatDate(r.updatedAt||r.importedAt))+'</td></tr>';
     });
     prod+='</tbody></table></div></div>';
     return prod;
@@ -1987,14 +2652,15 @@
     window._analyticsSub = sub;
     var v = document.getElementById('V-analytics');
     if(!v) return;
-    var wrapStyle = sub === 'customers' ? 'max-width:none;margin:0;display:flex;flex-direction:column;gap:12px' : 'max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:12px';
+    var wrapStyle = (sub === 'customers' || sub === 'repricing') ? 'width:100%;margin:0;display:flex;flex-direction:column;gap:12px' : 'max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:12px';
     var titles = {
       dash:'ANALYTICS // DASHBOARD',
       sales:'ANALYTICS // PENJUALAN',
       service:'ANALYTICS // LAYANAN',
       promo:'ANALYTICS // PROMOSI',
       customers:'ANALYTICS // CUSTOMER DATA',
-      products:'ANALYTICS // RINCIAN PRODUK'
+      products:'ANALYTICS // RINCIAN PRODUK',
+      repricing:'ANALYTICS // REVISI HARGA'
     };
     var descs = {
       dash:'Command monitor untuk insight analytics.',
@@ -2002,20 +2668,31 @@
       service:'Pantau kualitas layanan dan response.',
       promo:'Monitor performa promosi dan campaign.',
       customers:'Geomap, order intel, repeat buyer, dan quality check.',
-      products:'Database SKU, stok, modal, kategori, dan tren perubahan produk.'
+      products:'Database SKU, stok, modal, kategori, dan tren perubahan produk.',
+      repricing:'Engine profit bersih, matching SKU, repricing otomatis, dan readiness untuk scale ads.'
     };
     var h = '<div style="'+wrapStyle+'">';
-    h += '<div class="card" style="padding:10px 12px;background:linear-gradient(180deg,#101418,#0b0d10);border:1px solid rgba(255,255,255,.07)"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:16px;font-weight:900;color:#fff;letter-spacing:.14em">'+titles[sub]+'</div><div style="font-size:11px;color:#8fa6bb;margin-top:4px">'+descs[sub]+'</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">';
-    [['dash','Dashboard'],['sales','Penjualan'],['service','Layanan'],['promo','Promosi'],['customers','Customer Data'],['products','Rincian Produk']].forEach(function(tab){
-      h += '<button class="'+(sub===tab[0]?'btnp':'btns')+'" onclick="_renderAnalytics(\''+tab[0]+'\')" style="padding:8px 12px;'+(sub===tab[0]?'background:#8C5E16;border-color:#8C5E16':'')+'">'+tab[1]+'</button>';
-    });
-    h += '</div></div></div>';
+    if(sub === 'repricing'){
+      h += '<div class="card" style="padding:14px 16px;background:linear-gradient(180deg,#111827,#0b1220);border:1px solid rgba(255,255,255,.08);box-shadow:0 18px 36px rgba(2,6,23,.42)"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:16px;font-weight:900;color:#f8fafc;letter-spacing:.06em">'+titles[sub]+'</div><div style="font-size:11px;color:#8fa6bb;margin-top:4px">'+descs[sub]+'</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">';
+      [['dash','Dashboard'],['sales','Penjualan'],['service','Layanan'],['promo','Promosi'],['customers','Customer Data'],['products','Rincian Produk'],['repricing','Revisi Harga']].forEach(function(tab){
+        var active = sub===tab[0];
+        h += '<button class="'+(active?'btnp':'btns')+'" onclick="_renderAnalytics(\''+tab[0]+'\')" style="padding:8px 12px;border-radius:12px;'+(active?'background:#8C5E16;border:1px solid #8C5E16;color:#fff;box-shadow:0 8px 18px rgba(140,94,22,.35)':'background:#111827;border:1px solid rgba(255,255,255,.12);color:#dbe7f3')+'">'+tab[1]+'</button>';
+      });
+      h += '</div></div></div>';
+    }else{
+      h += '<div class="card" style="padding:10px 12px;background:linear-gradient(180deg,#101418,#0b0d10);border:1px solid rgba(255,255,255,.07)"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-size:16px;font-weight:900;color:#fff;letter-spacing:.14em">'+titles[sub]+'</div><div style="font-size:11px;color:#8fa6bb;margin-top:4px">'+descs[sub]+'</div></div><div style="display:flex;gap:8px;flex-wrap:wrap">';
+      [['dash','Dashboard'],['sales','Penjualan'],['service','Layanan'],['promo','Promosi'],['customers','Customer Data'],['products','Rincian Produk'],['repricing','Revisi Harga']].forEach(function(tab){
+        h += '<button class="'+(sub===tab[0]?'btnp':'btns')+'" onclick="_renderAnalytics(\''+tab[0]+'\')" style="padding:8px 12px;'+(sub===tab[0]?'background:#8C5E16;border-color:#8C5E16':'')+'">'+tab[1]+'</button>';
+      });
+      h += '</div></div></div>';
+    }
     if(sub === 'dash') h += aDashboard();
     else if(sub === 'sales') h += aSalesTab();
     else if(sub === 'service') h += aServiceTab();
     else if(sub === 'promo') h += aPromoTab();
     else if(sub === 'customers') h += aCustomerTab();
     else if(sub === 'products') h += aProductsTab();
+    else if(sub === 'repricing') h += aRepricingTab();
     h += '</div>';
     v.innerHTML = h;
     if(sub === 'customers'){
@@ -2025,6 +2702,8 @@
     }else if(sub === 'products'){
       aDisposeMap();
       try{ if(typeof _toolsProductRenderChart==='function') _toolsProductRenderChart(); }catch(e){}
+    }else if(sub === 'repricing'){
+      aDisposeMap();
     }else{
       aDisposeMap();
     }
