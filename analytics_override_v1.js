@@ -2731,6 +2731,7 @@
     var defs = [
       {id:'dash', lbl:'DASHBOARD'},
       {id:'kpi', lbl:'KPI'},
+      {id:'foto', lbl:'FOTO PRODUK'},
       {id:'hr', lbl:'HR'},
       {id:'finance', lbl:'FINANCE'},
       {id:'analytics', lbl:'ANALYTICS'},
@@ -2781,7 +2782,7 @@
     _activeTab = tabId;
     buildTabBar();
     if(typeof _resetPanelState === 'function') _resetPanelState();
-    ['hr','finance','log','development','analytics','ai','tools'].forEach(function(id){
+    ['hr','finance','log','development','analytics','ai','tools','foto'].forEach(function(id){
       if(!document.getElementById('V-'+id)){
         var d = document.createElement('div');
         d.id = 'V-'+id;
@@ -2790,13 +2791,14 @@
         if(b) b.appendChild(d);
       }
     });
-    var all = ['dash','hr','finance','analytics','ai','development','tools','eval','payroll','stats','emp','hist','admin','supplier','taligf','kpi','laporan','log'].concat(customTabs.map(function(ct){ return 'ct_' + ct.id; }));
+    var all = ['dash','foto','hr','finance','analytics','ai','development','tools','eval','payroll','stats','emp','hist','admin','supplier','taligf','kpi','laporan','log'].concat(customTabs.map(function(ct){ return 'ct_' + ct.id; }));
     all.forEach(function(id){
       var v = document.getElementById('V-' + id);
       if(v) v.style.display = (id === tabId) ? 'block' : 'none';
     });
     try{
       if(tabId === 'dash') renderDash();
+      else if(tabId === 'foto' && typeof _renderFotoProduk === 'function') _renderFotoProduk();
       else if(tabId === 'hr') _renderHR('dash');
       else if(tabId === 'finance') _renderFinance('dash');
       else if(tabId === 'analytics') _renderAnalytics(_analyticsSub || 'dash');

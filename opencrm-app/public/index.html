@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenCRM</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="app" class="ocm-shell">
+    <aside class="ocm-sidebar" id="sidebar">
+      <div class="ocm-sidebar-head">
+        <div class="ocm-logo">O</div>
+        <div class="ocm-brand">
+          <strong>OpenCRM</strong>
+          <span>WhatsApp Workspace</span>
+        </div>
+        <button class="ocm-icon-btn ocm-mobile-only" data-action="close-sidebar" title="Tutup sidebar">x</button>
+      </div>
+      <nav class="ocm-nav" id="nav"></nav>
+      <div class="ocm-user">
+        <div class="ocm-avatar" data-name="OpenCRM Owner">OO</div>
+        <div>
+          <strong>OpenCRM Owner</strong>
+          <span>Admin</span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="ocm-main">
+      <header class="ocm-topbar">
+        <button class="ocm-icon-btn ocm-mobile-only" data-action="open-sidebar" title="Buka sidebar">=</button>
+        <div>
+          <h1 id="pageTitle">Dashboard</h1>
+          <p id="pageSubtitle">Omnichannel CRM, AI, workflow, dan WhatsApp webhook.</p>
+        </div>
+        <div class="ocm-top-actions">
+          <span class="ocm-live-dot"></span>
+          <span id="healthText">Local</span>
+          <button class="ocm-btn" data-action="theme">Theme</button>
+        </div>
+      </header>
+      <main id="view" class="ocm-page"></main>
+      <nav class="ocm-bottom-nav" id="bottomNav"></nav>
+    </div>
+  </div>
+  <div id="toast" class="ocm-toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

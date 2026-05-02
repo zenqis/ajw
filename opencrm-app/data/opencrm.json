@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "users": [
+    {
+      "id": "usr_owner",
+      "name": "OpenCRM Owner",
+      "email": "owner@opencrm.local",
+      "role": "admin"
+    }
+  ],
+  "customers": [],
+  "conversations": [],
+  "messages": {},
+  "agents": [],
+  "deals": [],
+  "stages": [
+    "New Lead",
+    "Qualified",
+    "Proposal",
+    "Won",
+    "Follow Up"
+  ],
+  "knowledge": [],
+  "flows": [
+    {
+      "id": "flow_default",
+      "name": "Default WhatsApp AI Handover",
+      "active": false,
+      "nodes": [
+        "trigger",
+        "ai_response",
+        "condition",
+        "handover",
+        "end"
+      ],
+      "executions": 0
+    }
+  ],
+  "products": [],
+  "orders": [],
+  "broadcasts": [],
+  "webhook_events": [],
+  "settings": {
+    "ai_mode": "hybrid",
+    "provider": "growthcircle",
+    "verify_token": "opencrm-ajw-verify",
+    "moonwa_endpoint_text": "https://api.moonwa.id/api/send-message",
+    "moonwa_endpoint_media": "https://api.moonwa.id/api/send-media",
+    "moonwa_auto_reply": false
+  },
+  "created_at": "2026-05-02T09:26:42.398Z"
+}

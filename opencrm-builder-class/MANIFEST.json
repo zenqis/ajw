@@ -1,0 +1,318 @@
+{
+  "project": "OpenCRM",
+  "alias": "Scalebiz",
+  "generated_at": "2026-04-29",
+  "purpose": "Machine-readable documentation map for OpenClaw or any AI rebuild agent.",
+  "entrypoint": "OPENCLAW.md",
+  "read_order": [
+    "README.md",
+    "OPENCLAW.md",
+    "REBUILD-FROM-SCRATCH.md",
+    "TOOLS.md",
+    "PRD.md",
+    "TECHSTACK.md",
+    "MEMORY.md",
+    "database/schema.sql",
+    "database/ERD.md",
+    "database/SEED-DATA.md",
+    "backend/blueprint.md",
+    "backend/API-CONTRACTS.md",
+    "backend/PIPELINE.md",
+    "backend/SOCKET-EVENTS.md",
+    "backend/STATE-MACHINES.md",
+    "shared/TYPES.md",
+    "frontend/blueprint.md",
+    "frontend/UI-REFERENCE.md",
+    "frontend/PAGE-API-MAP.md",
+    "INTEGRATIONS.md"
+  ],
+  "ports": {
+    "backend_api": 3010,
+    "socket_io": 3011,
+    "frontend": 3005,
+    "postgres": 5432,
+    "redis": 6379
+  },
+  "workspace": {
+    "builder_class_default_path": "/home/openclaw/opencrm-builder-class",
+    "app_output_default_path": "/home/openclaw/.openclaw/workspace/opencrm-app",
+    "rule": "Read docs/contracts from builder class; write generated frontend/backend code only to app output workspace."
+  },
+  "commands": {
+    "verify_git": "git --version",
+    "verify_node": "node --version",
+    "verify_npx": "npx --version",
+    "verify_bun": "bun --version",
+    "verify_postgres_client": "psql --version && createdb --version",
+    "verify_redis": "redis-cli ping",
+    "create_database": "createdb -h \"$PGHOST\" -p \"$PGPORT\" -U \"$PGUSER\" \"$PGDATABASE\"",
+    "enable_pgvector": "psql \"$DATABASE_URL\" -c \"CREATE EXTENSION IF NOT EXISTS vector;\"",
+    "import_schema_sql": "psql \"$DATABASE_URL\" -f \"$OPENCRM_BUILDER_CLASS/database/schema.sql\"",
+    "verify_postgres_access": "psql \"$DATABASE_URL\" -c \"SELECT current_database(), current_user;\"",
+    "verify_redis_access": "redis-cli -u \"$REDIS_URL\" ping",
+    "install": "bun install",
+    "db_push": "bun run db:push",
+    "db_generate": "bun run db:generate",
+    "seed_core": "bun run --filter backend db:seed",
+    "build_backend": "bun run build:backend",
+    "build_frontend": "bun run build:frontend",
+    "dev_backend": "./run-backend.sh",
+    "dev_frontend": "bun run dev:frontend"
+  },
+  "prerequisites": {
+    "required": [
+      "Git",
+      "Node.js 20+ with npm/npx",
+      "Bun 1.1+",
+      "PostgreSQL 15+ with pgvector",
+      "PostgreSQL client tools: psql and createdb",
+      "Redis 7+"
+    ],
+    "recommended": [
+      "Docker",
+      "Browser for frontend verification",
+      "Cloudflared for public webhook testing"
+    ],
+    "local_services": {
+      "postgres_pgvector": 5432,
+      "redis": 6379
+    }
+  },
+  "execution_guardrails": {
+    "rule": "Do not lint, build, test, start servers, or run browser smoke tests until ordered gates are complete.",
+    "blocked_before_gates_complete": [
+      "bun run lint",
+      "bunx biome",
+      "tsc --noEmit",
+      "bun run build:*",
+      "vite build",
+      "bun test",
+      "bun run test",
+      "bun run dev:*",
+      "bun run start:*",
+      "./run-backend.sh",
+      "./run-frontend.sh",
+      "browser smoke tests"
+    ],
+    "allowed_early": [
+      "read docs",
+      "install system prerequisites",
+      "install dependencies",
+      "create env files",
+      "start Postgres/Redis",
+      "run database setup at database gate",
+      "generate Prisma client after schema exists",
+      "execute core seed after schema/client are ready",
+      "inspect source for ambiguity",
+      "edit files for current stage"
+    ],
+    "ordered_gates": [
+      "toolchain verified",
+      "docs read order completed",
+      "repository scaffolded",
+      "env examples copied and required local values filled",
+      "PostgreSQL with pgvector and Redis running",
+      "PostgreSQL and Redis access verified using TOOLS.md",
+      "database created and schema.sql imported",
+      "Prisma client generated",
+      "core seed executed",
+      "backend API contract implemented",
+      "frontend page/API map implemented",
+      "pipeline/socket/state parity reviewed",
+      "final lint/build/test/server smoke"
+    ]
+  },
+  "documents": [
+    {
+      "path": "OPENCLAW.md",
+      "category": "agent-entrypoint",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["read order", "source of truth matrix", "pitfalls", "parity checks"]
+    },
+    {
+      "path": "REBUILD-FROM-SCRATCH.md",
+      "category": "agent-runbook",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["implementation order", "verification gates", "acceptance target"]
+    },
+    {
+      "path": "TOOLS.md",
+      "category": "tools",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["workspace separation", "PostgreSQL connection", "Redis connection", "schema import", "access verification"]
+    },
+    {
+      "path": "README.md",
+      "category": "index",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["documentation inventory", "quick path by goal"]
+    },
+    {
+      "path": "PRD.md",
+      "category": "product",
+      "priority": 1,
+      "must_read": true,
+      "contains": ["global product requirements"]
+    },
+    {
+      "path": "TECHSTACK.md",
+      "category": "architecture",
+      "priority": 1,
+      "must_read": true,
+      "contains": ["runtime", "backend stack", "frontend stack", "queues", "deployment"]
+    },
+    {
+      "path": "MEMORY.md",
+      "category": "architecture",
+      "priority": 1,
+      "must_read": true,
+      "contains": ["global decisions", "conventions"]
+    },
+    {
+      "path": "database/schema.sql",
+      "category": "database",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["tables", "constraints", "indexes", "extensions"]
+    },
+    {
+      "path": "database/ERD.md",
+      "category": "database",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["mermaid ERD", "domain groupings", "tenant relationships"]
+    },
+    {
+      "path": "database/SEED-DATA.md",
+      "category": "database",
+      "priority": 1,
+      "must_read": true,
+      "contains": ["seed commands", "initial data", "catalog seeds"]
+    },
+    {
+      "path": "database/blueprint.md",
+      "category": "database",
+      "priority": 2,
+      "must_read": false,
+      "contains": ["database architecture notes"]
+    },
+    {
+      "path": "backend/API-CONTRACTS.md",
+      "category": "backend",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["REST routes", "auth requirements", "request schemas", "response patterns"]
+    },
+    {
+      "path": "backend/PIPELINE.md",
+      "category": "backend",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["message pipeline", "webhook flow", "AI flow", "outbound flow"]
+    },
+    {
+      "path": "backend/SOCKET-EVENTS.md",
+      "category": "backend",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["Socket.IO rooms", "events", "payloads", "known realtime gaps"]
+    },
+    {
+      "path": "backend/STATE-MACHINES.md",
+      "category": "backend",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["conversation status", "message status", "flow runtime", "handover", "broadcast", "knowledge", "commerce"]
+    },
+    {
+      "path": "backend/blueprint.md",
+      "category": "backend",
+      "priority": 1,
+      "must_read": true,
+      "contains": ["backend architecture", "modules", "plugins", "workers"]
+    },
+    {
+      "path": "backend/STRUCTURE.md",
+      "category": "backend",
+      "priority": 2,
+      "must_read": false,
+      "contains": ["backend directory map"]
+    },
+    {
+      "path": "backend/IMPLEMENTATION-STATUS.md",
+      "category": "backend",
+      "priority": 2,
+      "must_read": false,
+      "contains": ["backend completion status"]
+    },
+    {
+      "path": "shared/TYPES.md",
+      "category": "shared",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["shared interfaces", "status strings", "response envelopes", "realtime payload types"]
+    },
+    {
+      "path": "frontend/PAGE-API-MAP.md",
+      "category": "frontend",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["route to API map", "socket listeners", "data flow"]
+    },
+    {
+      "path": "frontend/UI-REFERENCE.md",
+      "category": "frontend",
+      "priority": 0,
+      "must_read": true,
+      "contains": ["login UI", "sidebar UI", "dashboard UI", "CSS reference"]
+    },
+    {
+      "path": "frontend/blueprint.md",
+      "category": "frontend",
+      "priority": 1,
+      "must_read": true,
+      "contains": ["frontend architecture", "routes", "components", "state"]
+    },
+    {
+      "path": "frontend/STRUCTURE.md",
+      "category": "frontend",
+      "priority": 2,
+      "must_read": false,
+      "contains": ["frontend directory map"]
+    },
+    {
+      "path": "frontend/IMPLEMENTATION-STATUS.md",
+      "category": "frontend",
+      "priority": 2,
+      "must_read": false,
+      "contains": ["frontend completion status"]
+    },
+    {
+      "path": "INTEGRATIONS.md",
+      "category": "integrations",
+      "priority": 1,
+      "must_read": true,
+      "contains": ["WhatsApp", "R2/S3", "AI/RAG", "Pakasir", "Socket.IO", "Xendit compatibility"]
+    }
+  ],
+  "known_pitfalls": [
+    "Resolved conversations are terminal; new inbound creates a new conversation row.",
+    "Handover timeout does not persist an expired status; it escalates or triages while pending.",
+    "Xendit variables exist but current mounted payment flow is Pakasir-first.",
+    "Most statuses are strings, not Prisma enums.",
+    "Socket.IO contract documents current auth/listener gaps.",
+    "Keep /api and /api/v1 compatibility routes where documented."
+  ],
+  "acceptance": {
+    "database": "matches database/schema.sql",
+    "api": "matches backend/API-CONTRACTS.md",
+    "frontend": "matches frontend/PAGE-API-MAP.md and UI-REFERENCE.md",
+    "realtime": "matches backend/SOCKET-EVENTS.md",
+    "business_rules": "matches backend/STATE-MACHINES.md",
+    "pipeline": "matches backend/PIPELINE.md"
+  }
+}

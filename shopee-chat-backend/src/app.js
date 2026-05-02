@@ -2,6 +2,7 @@ import "dotenv/config";
 import crypto from "node:crypto";
 import cors from "cors";
 import express from "express";
+import { registerAiGatewayRoutes } from "./ai/controller.js";
 
 import {
   deleteAiKnowledge,
@@ -75,8 +76,9 @@ const secretSeed = String(
 const encryptKey = crypto.createHash("sha256").update(secretSeed).digest();
 
 app.use(cors());
-app.use(express.json({ limit: "18mb" }));
-app.use(express.text({ type: "*/*", limit: "18mb" }));
+app.use(express.json({ limit: "30mb" }));
+app.use(express.text({ type: "*/*", limit: "30mb" }));
+registerAiGatewayRoutes(app);
 
 function encryptApiKey(plain) {
   const text = String(plain || "").trim();

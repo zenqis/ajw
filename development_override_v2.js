@@ -423,7 +423,7 @@
     var h = '<div style="max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:12px">';
     h += '<div class="card" style="background:linear-gradient(135deg,#182330,#35241B)"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap"><div><div style="font-size:18px;font-weight:800;color:#fff">Development Workspace</div><div style="font-size:11px;color:rgba(255,255,255,.76);margin-top:4px">Ruang strategi, dokumentasi, brand, pembelajaran, dan pengembangan bisnis AJW yang sekarang benar-benar editable.</div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip" style="background:rgba(240,197,106,.12);color:#F0C56A;border:1px solid rgba(240,197,106,.25)">Editable</span><span class="chip" style="background:rgba(143,208,255,.12);color:#8FD0FF;border:1px solid rgba(143,208,255,.25)">Supabase Ready</span></div></div></div>';
     h += '<div class="card"><div style="display:flex;gap:8px;flex-wrap:wrap">';
-    [['resources','Resources'],['vision','Vision Board'],['learning','Learning Library'],['ideas','Ideas'],['documents','Dokumen'],['objectives','Objektif'],['tasks','Task List'],['audit','Business Audit'],['swot','SWOT'],['marketing','Marketing Hub'],['brand','Brand Design']].forEach(function(tab){
+[['resources','Resources'],['vision','Vision Board'],['learning','Learning Library'],['ideas','Ideas'],['documents','Dokumen'],['objectives','Objektif'],['tasks','Task List'],['audit','Business Audit'],['swot','SWOT'],['marketing','Marketing Hub'],['brand','Brand Design'],['foto','Foto Produk']].forEach(function(tab){
       h += '<button class="' + (sub === tab[0] ? 'btnp' : 'btns') + '" onclick="_renderDevelopment(\'' + tab[0] + '\')" style="padding:8px 12px;' + (sub === tab[0] ? 'background:#8C5E16;border-color:#8C5E16' : '') + '">' + tab[1] + '</button>';
     });
     h += '</div></div>';
@@ -438,8 +438,12 @@
     else if(sub === 'swot') h += devSwotBoard();
     else if(sub === 'marketing') h += devMarketingCards();
     else if(sub === 'brand') h += devBrandSection();
+    else if(sub === 'foto') h += '<div id="DEV-FOTO-HOST"></div>';
     h += '</div>' + devModal();
     v.innerHTML = h;
+    if(sub === 'foto' && typeof _renderFotoProdukInto === 'function'){
+      setTimeout(function(){ _renderFotoProdukInto('DEV-FOTO-HOST'); }, 0);
+    }
   };
 
   if(document.getElementById('V-development') && typeof _activeTab !== 'undefined' && _activeTab === 'development'){

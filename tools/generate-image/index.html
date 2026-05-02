@@ -1,0 +1,1074 @@
+﻿<!DOCTYPE html>
+<html class="dark" lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AJW - Generate Image</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            panel: "#0F0F0F",
+            panel2: "#1A1A1A",
+            line: "#262626",
+            textmain: "#e5e2e1",
+            textmuted: "#8b8b8b"
+          },
+          fontFamily: {
+            sans: ["Inter", "sans-serif"]
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body class="overflow-hidden bg-black font-sans text-textmain antialiased">
+  <aside class="app-sidebar fixed left-0 top-0 z-50 flex h-full w-[260px] flex-col border-r border-line bg-panel px-4 py-5">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo-wrap">
+        <span class="sidebar-logo-mark">AJW</span>
+        <div>
+          <h1 class="sidebar-brand-title">AJW Generate Image</h1>
+          <p class="sidebar-brand-subtitle">AI Studio</p>
+        </div>
+      </div>
+      <button class="sidebar-icon-btn" type="button">
+        <span class="material-symbols-outlined text-[18px]">menu_open</span>
+      </button>
+    </div>
+
+    <div class="sidebar-workspace-switcher">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-[18px] text-white">home</span>
+        <span class="text-sm font-semibold text-white">AJW Tools</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="rounded-full bg-[#2e2a16] px-2 py-1 text-[10px] font-bold text-[#d4b24f]">PRO</span>
+        <span class="material-symbols-outlined text-[18px] text-neutral-400">expand_more</span>
+      </div>
+    </div>
+
+    <nav class="sidebar-scroll mt-5 flex-1 overflow-y-auto custom-scrollbar">
+      <div class="sidebar-menu-group">
+        <a class="sidebar-link" href="#">
+          <span class="material-symbols-outlined text-[19px]">home</span>
+          <span>Home</span>
+        </a>
+        <a class="sidebar-link" href="#">
+          <span class="material-symbols-outlined text-[19px]">tips_and_updates</span>
+          <span>Gallery</span>
+        </a>
+      </div>
+
+      <div class="sidebar-section">
+        <p class="sidebar-section-title">Creation</p>
+        <button class="sidebar-row-button" type="button">
+          <div class="sidebar-row-left">
+            <span class="material-symbols-outlined text-[18px]">videocam</span>
+            <span>Video</span>
+          </div>
+          <div class="sidebar-row-right">
+            <span class="sidebar-badge sidebar-badge-green">AJW</span>
+            <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+          </div>
+        </button>
+
+        <button class="workspace-tab sidebar-row-button sidebar-row-active active" data-workspace-target="listing-images" type="button">
+          <div class="sidebar-row-left">
+            <span class="material-symbols-outlined text-[18px]">image</span>
+            <span>Image</span>
+          </div>
+          <div class="sidebar-row-right">
+            <span class="sidebar-badge sidebar-badge-teal">GPT Image 2</span>
+            <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+          </div>
+        </button>
+
+        <button class="sidebar-row-button" type="button">
+          <div class="sidebar-row-left">
+            <span class="material-symbols-outlined text-[18px]">audiotrack</span>
+            <span>Audio</span>
+          </div>
+          <div class="sidebar-row-right">
+            <span class="sidebar-badge sidebar-badge-green">Voice Clone</span>
+            <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+          </div>
+        </button>
+
+      </div>
+
+      <div class="sidebar-section">
+        <p class="sidebar-section-title">Tools</p>
+        <button class="workspace-tab sidebar-link-button" data-workspace-target="brand-information" type="button">
+          <span class="material-symbols-outlined text-[18px]">storefront</span>
+          <span>Brand Information</span>
+        </button>
+        <button class="workspace-tab sidebar-link-button" data-workspace-target="prompt-hub" type="button">
+          <span class="material-symbols-outlined text-[18px]">edit_note</span>
+          <span>Prompt</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="w-full rounded-xl bg-[#202020] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#2a2a2a]" type="button">AJW Image Generator</button>
+    </div>
+  </aside>
+
+  <header class="fixed left-[260px] right-0 top-0 z-40 flex h-14 items-center justify-between border-b border-line bg-panel px-6">
+    <nav class="flex h-full items-center gap-4">
+      <button class="flex h-full items-center px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-500 transition-colors hover:text-neutral-300" type="button">Image</button>
+      <button class="workspace-tab flex h-full items-center px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-500 transition-colors hover:text-neutral-300" data-workspace-target="listing-images" type="button">Listing Images</button>
+      <button class="workspace-tab active flex h-full items-center border-b-2 border-white px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-white" data-workspace-target="aplus-content" type="button">A+ Content</button>
+      <button class="workspace-tab flex h-full items-center px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-500 transition-colors hover:text-neutral-300" data-workspace-target="multi-angle" type="button">Multi-Angle</button>
+      <button class="workspace-tab flex h-full items-center px-1 text-[11px] font-medium uppercase tracking-[0.12em] text-neutral-500 transition-colors hover:text-neutral-300" data-workspace-target="background-removal" type="button">Background Removal</button>
+    </nav>
+
+    <div class="flex items-center gap-4">
+      <button class="workspace-tab rounded-full border border-line bg-panel2 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-neutral-200 transition-colors hover:bg-[#242424]" data-workspace-target="admin-tab" type="button">Admin</button>
+      <div id="apiStatus" class="rounded-full border border-line bg-panel2 px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-neutral-300">API belum disetel</div>
+    </div>
+  </header>
+
+  <main class="ml-[260px] mt-14 h-[calc(100vh-56px)] bg-black">
+    <section id="listing-images" class="workspace-panel hidden h-full flex">
+      <aside class="listing-config-panel flex h-full w-[380px] max-w-full flex-col overflow-y-auto border-r border-line bg-[#111111] custom-scrollbar">
+        <div class="space-y-6 p-5 lg:p-6">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-sm font-semibold text-white">Upload Images</label>
+              <span id="listingProductCount" class="text-sm font-semibold text-neutral-400">0/8</span>
+            </div>
+            <input id="listingProductUpload" class="hidden" accept="image/*" multiple type="file">
+            <button id="listingUploadBtn" class="group flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#4a4a4a] bg-[#1e1e1e] px-5 py-8 transition-colors hover:border-neutral-400 active:scale-[0.995] sm:px-6 sm:py-10" type="button">
+              <span class="material-symbols-outlined text-4xl text-white">cloud_upload</span>
+              <div class="space-y-1 text-center">
+                <p class="text-xl font-semibold text-white">Click or drag to upload images</p>
+                <p class="text-sm text-neutral-400">Supports JPG, JPEG, PNG, WEBP, max 10MB each</p>
+              </div>
+              <div class="mt-2 flex flex-wrap justify-center gap-3">
+                <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Choose Files</span>
+                <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Upload Batch</span>
+              </div>
+            </button>
+            <div id="listingUploadList" class="grid grid-cols-4 gap-2"></div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Image Count</span>
+              <div class="relative">
+                <select id="listingQuantity" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option value="1">1 Image</option>
+                  <option value="2">2 Images</option>
+                  <option value="3">3 Images</option>
+                  <option value="4">4 Images</option>
+                  <option value="5">5 Images</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Aspect Ratio</span>
+              <div class="relative">
+                <select id="listingSize" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option value="auto">Auto</option>
+                  <option value="1536x1024">16:9</option>
+                  <option value="1024x1024">1:1</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+          </div>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Target Bahasa</span>
+            <div class="relative">
+              <select id="listingLanguage" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                <option value="Indonesia">Indonesia</option>
+                <option value="English">Inggris</option>
+                <option value="Chinese">China</option>
+              </select>
+              <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+            </div>
+          </label>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Product Selling Points</span>
+            <textarea id="listingSellingPoints" class="h-32 w-full resize-none rounded-xl border border-line bg-[#171717] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Product Name:
+Core Selling Points:
+Target Audience:
+Expected Scenarios:
+Size Parameters:"></textarea>
+          </label>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Template Prompt</span>
+            <div class="relative">
+              <select id="listingTemplate" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                <option value="premium">Premium Hero Marketplace</option>
+                <option value="marketplace">Clean Catalog Conversion</option>
+                <option value="affiliate">Hard Selling Promo Banner</option>
+                <option value="trust">Best Seller Social Proof</option>
+                <option value="luxury">Luxury Gear Editorial</option>
+                <option value="detail">Close-Up Detail Story</option>
+                <option value="comparison">Feature Comparison Layout</option>
+                <option value="lifestyle">Lifestyle Usage Scene</option>
+              </select>
+              <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+            </div>
+          </label>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Custom Prompt</span>
+            <textarea id="listingPrompt" class="h-28 w-full resize-none rounded-xl border border-line bg-[#171717] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Add custom visual direction for your listing images..."></textarea>
+          </label>
+        </div>
+
+        <div class="sticky bottom-0 border-t border-line bg-[#111111] p-5 lg:p-6">
+          <button id="generateListingBtn" class="w-full cursor-pointer rounded-xl bg-white px-4 py-4 text-base font-semibold text-[#1b1b1b] transition duration-200 hover:opacity-90 active:scale-[0.99] sm:text-lg" type="button">Generate Listing Images</button>
+          <p id="listingStatus" class="mt-3 text-center text-sm text-neutral-500">Upload at least one product image to begin</p>
+        </div>
+      </aside>
+
+      <section class="listing-preview-panel flex-1 overflow-y-auto bg-[#090909] p-5 custom-scrollbar sm:p-6 lg:p-8">
+        <div class="mx-auto max-w-[1360px]">
+          <div class="mb-5 text-center lg:mb-6">
+            <h2 class="text-xl font-bold tracking-tight text-white sm:text-2xl lg:text-[28px]">AI Listing Images</h2>
+            <p class="mt-2 text-xs text-neutral-400 sm:text-sm lg:text-[13px]">Upload product images, AI instantly generates <strong class="font-semibold text-white">multi-platform compliant</strong> high-conversion product images</p>
+          </div>
+
+          <div class="listing-output-stage">
+            <div class="listing-output-header">
+              <div>
+                <p class="listing-output-kicker">Generated Output</p>
+                <h3 class="listing-output-title">Listing Image Canvas</h3>
+              </div>
+              <div class="listing-output-tools">
+                <button id="listingPreviewModeBtn" class="listing-output-chip active" type="button">Preview</button>
+                <button id="listingAutoLayoutBtn" class="listing-output-chip" type="button">Auto Layout</button>
+                <button id="listingDownloadBtn" class="listing-output-chip" type="button">Unduh</button>
+              </div>
+            </div>
+            <div id="listingPreviewGrid" class="listing-preview-grid">
+              <div class="listing-empty">Belum ada listing image yang dihasilkan.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section id="aplus-content" class="workspace-panel flex h-full">
+      <aside class="aplus-config-panel flex h-full w-[380px] max-w-full flex-col overflow-y-auto border-r border-line bg-[#111111] custom-scrollbar">
+        <div class="space-y-6 p-5">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-sm font-semibold text-white">Product images</label>
+              <span id="aplusProductCount" class="text-sm font-semibold text-neutral-400">0/5</span>
+            </div>
+            <input id="aplusProductUpload" class="hidden" accept="image/*" multiple type="file">
+            <button id="aplusUploadBtn" class="group flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#4a4a4a] bg-[#1e1e1e] px-5 py-8 transition-colors hover:border-neutral-400 active:scale-[0.995] sm:px-6 sm:py-10" type="button">
+              <span class="material-symbols-outlined text-4xl text-white">cloud_upload</span>
+              <div class="space-y-1 text-center">
+                <p class="text-xl font-semibold text-white">Click or drag to upload images</p>
+                <p class="text-sm text-neutral-400">Supports JPG, JPEG, PNG, WEBP, max 10MB each</p>
+              </div>
+              <div class="mt-2 flex flex-wrap justify-center gap-3">
+                <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Choose Files</span>
+                <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Select from Library</span>
+              </div>
+            </button>
+            <div id="aplusUploadList" class="grid grid-cols-5 gap-2"></div>
+          </div>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">E-commerce Platform</span>
+            <div class="relative">
+              <select id="aplusPlatform" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                <option>Amazon</option>
+                <option>TikTok Shop</option>
+                <option>Shopify</option>
+                <option>Walmart</option>
+              </select>
+              <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+            </div>
+          </label>
+
+          <div class="grid grid-cols-2 gap-3">
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Target Bahasa</span>
+              <div class="relative">
+                <select id="aplusLanguage" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option value="Indonesia">Indonesia</option>
+                  <option value="English">Inggris</option>
+                  <option value="Chinese">China</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Aspect Ratio</span>
+              <div class="relative">
+                <select id="aplusAspectRatio" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option>1:1 Square</option>
+                  <option>4:5 Portrait</option>
+                  <option>16:9 Landscape</option>
+                  <option>3:4 Story Layout</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+          </div>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Prompt Preset</span>
+            <div class="relative">
+              <select id="aplusPromptPreset" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0"></select>
+              <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+            </div>
+          </label>
+
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-semibold text-white">Product Selling Points &amp; Design Style</h3>
+              <button id="oneClickAnalysisBtn" class="flex items-center gap-2 text-sm font-semibold text-white" type="button">
+                <span class="material-symbols-outlined text-[18px]">auto_fix_high</span>
+                <span>One-Click Analysis</span>
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <label class="text-sm font-semibold text-white">Core Selling Points</label>
+              <button id="generateSellingPointsBtn" class="flex items-center gap-2 text-sm font-semibold text-white" type="button">
+                <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                <span>AI Generate</span>
+              </button>
+            </div>
+
+            <textarea id="aplusSellingPoints" class="h-32 w-full resize-none rounded-xl border border-line bg-[#171717] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Include the following for more accurate results:
+1. Product name
+2. Core selling points
+3. Target audience
+4. Expected scenes
+5. Size parameters"></textarea>
+          </div>
+
+          <div class="space-y-4 rounded-2xl border border-line bg-[#151515] p-4">
+            <div class="grid grid-cols-2 gap-2 rounded-xl border border-line bg-[#1b1b1b] p-1">
+              <button id="styleModeTrending" class="style-mode-btn active rounded-lg bg-[#2b2b2b] px-4 py-3 text-sm font-semibold text-white" data-style-mode="trending" type="button">Trending Styles</button>
+              <button id="styleModeReference" class="style-mode-btn rounded-lg px-4 py-3 text-sm font-semibold text-neutral-400" data-style-mode="reference" type="button">Reference / custom</button>
+            </div>
+
+            <div id="trendingStylePanel" class="style-mode-panel space-y-4">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <h4 class="text-sm font-semibold text-white">AI-Recommended Style Selection</h4>
+                </div>
+                <p class="text-sm text-neutral-400">GPT will analyze platform, selling points, and uploaded references to recommend the most suitable style direction.</p>
+                <button id="trendingStyleAnalysisBtn" class="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-[#141414] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1f1f1f]" type="button">
+                  <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
+                  <span>Trending Style Analysis with GPT</span>
+                </button>
+              </div>
+            </div>
+
+            <div id="referenceStylePanel" class="style-mode-panel hidden space-y-4">
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <label class="text-sm font-semibold text-white">Style / Layout Reference (optional)</label>
+                  <span id="aplusReferenceCount" class="text-sm font-semibold text-neutral-400">0/5</span>
+                </div>
+                <input id="aplusReferenceUpload" class="hidden" accept="image/*" multiple type="file">
+                <button id="aplusReferenceBtn" class="group flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#4a4a4a] bg-[#1e1e1e] px-5 py-8 transition-colors hover:border-neutral-400 active:scale-[0.995] sm:px-6 sm:py-10" type="button">
+                  <span class="material-symbols-outlined text-4xl text-white">cloud_upload</span>
+                  <div class="space-y-1 text-center">
+                    <p class="text-xl font-semibold text-white">Click or drag to upload images</p>
+                    <p class="text-sm text-neutral-400">Supports JPG, JPEG, PNG, WEBP, max 10MB each</p>
+                  </div>
+                  <div class="mt-2 flex flex-wrap justify-center gap-3">
+                    <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Choose Files</span>
+                    <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Select from Library</span>
+                  </div>
+                </button>
+                <div id="aplusReferenceList" class="grid grid-cols-5 gap-2"></div>
+                <p class="text-sm text-neutral-400">After uploading, AI will reference its visual style and layout</p>
+              </div>
+
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Design Requirements</span>
+                <textarea id="aplusDesignRequirements" class="h-24 w-full resize-none rounded-xl border border-line bg-[#171717] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Enter design requirements such as color preferences, layout style, creative direction..."></textarea>
+              </label>
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-semibold text-white">Include Modules</h4>
+              <span id="aplusModuleCount" class="text-sm text-neutral-400">0/16 selected</span>
+            </div>
+
+            <div id="aplusModuleGrid" class="grid grid-cols-2 gap-3">
+              <button class="module-card active" data-module-key="hero-shot" data-module-label="Hero Shot Template" data-module-description="Main visual template with strong branding and top-fold conversion focus" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Hero Shot</strong>
+                <span>Convey core value</span>
+              </button>
+              <button class="module-card active" data-module-key="selling-points" data-module-label="Selling Points Layout" data-module-description="Benefit-led composition for key features and conversion copy" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Selling Points</strong>
+                <span>Highlight differentiating advantages</span>
+              </button>
+              <button class="module-card active" data-module-key="lifestyle-scene" data-module-label="Lifestyle Scene Angle" data-module-description="Usage scene prompt with realistic environment and audience context" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Lifestyle Scene</strong>
+                <span>Show real usage scenarios</span>
+              </button>
+              <button class="module-card active" data-module-key="multi-angle-view" data-module-label="Multi-Angle Grid" data-module-description="Multiple product angles as a structured visual reference" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Multi-Angle View</strong>
+                <span>Show multiple angles</span>
+              </button>
+              <button class="module-card active" data-module-key="atmosphere-scene" data-module-label="Atmosphere Scene" data-module-description="Mood-driven template for emotional storytelling and visual ambiance" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Atmosphere Scene</strong>
+                <span>Show usage environment</span>
+              </button>
+              <button class="module-card active" data-module-key="product-detail" data-module-label="Product Detail Close-Up" data-module-description="Macro-focused prompt for craftsmanship, material, and finish detail" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Product Detail</strong>
+                <span>Zoom in on materials and craftsmanship</span>
+              </button>
+              <button class="module-card" data-module-key="brand-story" data-module-label="Brand Story Template" data-module-description="Editorial brand-introduction panel with visual identity support" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Brand Story</strong>
+                <span>Convey brand philosophy</span>
+              </button>
+              <button class="module-card" data-module-key="size-chart" data-module-label="Size Chart Layout" data-module-description="Specification or dimension panel as a supporting prompt reference" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Size / Capacity / Dimension Chart</strong>
+                <span>Show specification info</span>
+              </button>
+              <button class="module-card" data-module-key="before-after" data-module-label="Before After Comparison" data-module-description="Transformation-focused panel for effect comparison storytelling" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Before &amp; After</strong>
+                <span>Compare effect before and after use</span>
+              </button>
+              <button class="module-card" data-module-key="detailed-specs" data-module-label="Detailed Specs Layout" data-module-description="Technical prompt reference for parameter-heavy product explanation" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Detailed Specs / Parameter Table</strong>
+                <span>Show detailed product data</span>
+              </button>
+              <button class="module-card" data-module-key="craftsmanship" data-module-label="Craftsmanship Showcase" data-module-description="Detail composition focused on process, construction, and quality cues" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Craftsmanship</strong>
+                <span>Show manufacturing process</span>
+              </button>
+              <button class="module-card" data-module-key="accessories" data-module-label="Accessories and Bundle Layout" data-module-description="Accessory spread prompt for bundle items and included contents" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Accessories / Gifts</strong>
+                <span>Clarify all items included</span>
+              </button>
+              <button class="module-card" data-module-key="series-showcase" data-module-label="Series Showcase Grid" data-module-description="Prompt reference for multi-color or multi-SKU collection display" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Series Showcase</strong>
+                <span>Multi-color or multi-SKU display</span>
+              </button>
+              <button class="module-card" data-module-key="ingredients" data-module-label="Ingredient Material Layout" data-module-description="Composition reference for ingredient or material education blocks" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Ingredients / Materials</strong>
+                <span>Show formula / materials / ingredients</span>
+              </button>
+              <button class="module-card" data-module-key="comparison" data-module-label="Comparison Table Template" data-module-description="Prompt aid for product tier comparison and feature benchmarking" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>Comparison Table</strong>
+                <span>Compare options and feature tiers</span>
+              </button>
+              <button class="module-card" data-module-key="faq" data-module-label="FAQ Prompt Block" data-module-description="Supportive FAQ module as prompt guidance for objection handling" type="button">
+                <span class="module-check material-symbols-outlined">check_circle</span>
+                <strong>FAQ Block</strong>
+                <span>Answer common buyer questions</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sticky bottom-0 border-t border-line bg-[#111111] p-5">
+          <button id="generateAplusBtn" class="w-full cursor-pointer rounded-xl bg-[#b5b5b5] px-4 py-4 text-base font-semibold text-[#1b1b1b] transition duration-200 hover:opacity-90 active:scale-[0.99] sm:text-lg" type="button">
+            Generate A+ Content
+          </button>
+          <p id="aplusGenerateHint" class="mt-3 text-center text-sm text-neutral-500">Please upload at least one product image first</p>
+        </div>
+      </aside>
+
+      <section class="flex-1 overflow-y-auto bg-[#1c1c1c] p-8 custom-scrollbar">
+        <div class="mx-auto max-w-[1200px]">
+          <div class="mb-8 text-center">
+            <h2 class="text-[52px] font-bold tracking-tight text-white">A+ Content</h2>
+            <p class="mt-3 text-[22px] text-neutral-400">Upload product images, AI instantly generates <strong class="font-semibold text-white">multi-platform compliant</strong> professional A+ content images</p>
+          </div>
+
+          <div id="aplusPreviewGrid" class="aplus-preview-grid mx-auto">
+            <article class="aplus-card aplus-hero">
+              <img id="aplusHeroImage" src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80" alt="Hero preview">
+              <div class="aplus-card-label">01</div>
+            </article>
+            <article class="aplus-card">
+              <img id="aplusCard2Image" src="https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=900&q=80" alt="A+ card 2">
+              <div class="aplus-card-label">02</div>
+            </article>
+            <article class="aplus-card">
+              <img id="aplusCard3Image" src="https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=900&q=80" alt="A+ card 3">
+              <div class="aplus-card-label">03</div>
+            </article>
+            <article class="aplus-card light-card">
+              <div class="aplus-card-label dark-text">04</div>
+              <div class="aplus-placeholder-content">
+                <h3>Size Guide</h3>
+                <p>Size / Capacity / Dimension Chart</p>
+              </div>
+            </article>
+            <article class="aplus-card light-card">
+              <div class="aplus-card-label dark-text">05</div>
+              <div class="aplus-placeholder-content">
+                <h3>Premium Craftsmanship</h3>
+                <p>Craftsmanship</p>
+              </div>
+            </article>
+            <article class="aplus-card light-card">
+              <div class="aplus-card-label dark-text">06</div>
+              <div class="aplus-placeholder-content">
+                <h3>Everyday Versatility</h3>
+                <p>Lifestyle Scene</p>
+              </div>
+            </article>
+            <article class="aplus-card light-card">
+              <div class="aplus-card-label dark-text">07</div>
+              <div class="aplus-placeholder-content">
+                <h3>360° Layered Display</h3>
+                <p>Multi-Angle View</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section id="multi-angle" class="workspace-panel hidden h-full flex">
+      <aside class="multi-config-panel flex h-full w-[380px] max-w-full flex-col overflow-y-auto border-r border-line bg-[#111111] custom-scrollbar">
+        <div class="space-y-6 p-5 lg:p-6">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-sm font-semibold text-white">Upload product / subject image</label>
+              <span id="multiProductCount" class="text-sm font-semibold text-neutral-400">0/8</span>
+            </div>
+            <input id="multiProductUpload" class="hidden" accept="image/*" multiple type="file">
+            <button id="multiUploadBtn" class="group flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#4a4a4a] bg-[#1e1e1e] px-5 py-8 transition-colors hover:border-neutral-400 active:scale-[0.995] sm:px-6 sm:py-10" type="button">
+              <span class="material-symbols-outlined text-4xl text-white">cloud_upload</span>
+              <div class="space-y-1 text-center">
+                <p class="text-xl font-semibold text-white">Click or drag to upload images</p>
+                <p class="text-sm text-neutral-400">JPG, PNG, WEBP supported, max 10MB per image</p>
+              </div>
+              <div class="mt-2 flex flex-wrap justify-center gap-3">
+                <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Choose File</span>
+                <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">From Asset Library</span>
+              </div>
+            </button>
+            <div id="multiUploadList" class="grid grid-cols-4 gap-2"></div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Target Bahasa</span>
+              <div class="relative">
+                <select id="multiLanguage" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option value="Indonesia">Indonesia</option>
+                  <option value="English">Inggris</option>
+                  <option value="Chinese">China</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Aspect Ratio</span>
+              <div class="relative">
+                <select id="multiAspectRatio" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option value="1024x1024">1:1</option>
+                  <option value="1536x1024">16:9</option>
+                  <option value="1024x1536">2:3</option>
+                  <option value="auto">Auto</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+          </div>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Product Selling Points</span>
+            <textarea id="multiSellingPoints" class="h-28 w-full resize-none rounded-xl border border-line bg-[#171717] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Product name:
+Core selling points:
+Materials:
+Use cases:
+Size parameters:"></textarea>
+          </label>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Template Prompt</span>
+            <div class="relative">
+              <select id="multiTemplate" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                <option value="studio">Studio White Product Set</option>
+                <option value="catalog">Clean Marketplace Catalog</option>
+                <option value="editorial">Premium Editorial Turntable</option>
+                <option value="technical">Technical Angle Sheet</option>
+              </select>
+              <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+            </div>
+          </label>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Custom Prompt</span>
+            <textarea id="multiPrompt" class="h-24 w-full resize-none rounded-xl border border-line bg-[#171717] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Add extra angle, material, lighting, or composition instructions..."></textarea>
+          </label>
+
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span id="multiAngleCountLabel" class="text-sm font-semibold text-white">0 angles selected</span>
+              <div class="flex items-center gap-3 text-sm">
+                <button id="multiSelectAllBtn" class="font-semibold text-white" type="button">Select All</button>
+                <button id="multiClearBtn" class="text-neutral-400" type="button">Clear</button>
+              </div>
+            </div>
+            <div id="multiAngleGrid" class="multi-angle-picker">
+              <button class="multi-angle-tile active" data-angle-key="front" data-angle-name="Front" data-angle-prompt="Front view, 0 degrees, centered product, straight-on studio shot" type="button"><strong>Front</strong><span>0°</span></button>
+              <button class="multi-angle-tile active" data-angle-key="front-side" data-angle-name="Front Side" data-angle-prompt="Front side three-quarter view, 45 degrees, balanced depth and shape" type="button"><strong>Front Side</strong><span>45°</span></button>
+              <button class="multi-angle-tile active" data-angle-key="side" data-angle-name="Side" data-angle-prompt="Pure side profile, 90 degrees, clear silhouette and proportions" type="button"><strong>Side</strong><span>90°</span></button>
+              <button class="multi-angle-tile active" data-angle-key="back-side" data-angle-name="Back Side" data-angle-prompt="Rear three-quarter view, 135 degrees, show side and back structure" type="button"><strong>Back Side</strong><span>135°</span></button>
+              <button class="multi-angle-tile active" data-angle-key="back" data-angle-name="Back" data-angle-prompt="Back view, 180 degrees, centered rear shot with clean symmetry" type="button"><strong>Back</strong><span>180°</span></button>
+              <button class="multi-angle-tile active" data-angle-key="top-down" data-angle-name="Top Down" data-angle-prompt="Top down elevated angle, show seat, top surface, or upper form details" type="button"><strong>Top Down</strong><span>0° / 55°</span></button>
+              <button class="multi-angle-tile active" data-angle-key="bottom-up" data-angle-name="Bottom Up" data-angle-prompt="Bottom up angle, low camera view showing underside and lower structure" type="button"><strong>Bottom Up</strong><span>0° / -40°</span></button>
+              <button class="multi-angle-tile active" data-angle-key="front-elevated" data-angle-name="Front Elevated" data-angle-prompt="Front elevated angle, 45 degrees horizontally and 35 degrees vertically" type="button"><strong>Front Elevated</strong><span>45° / 35°</span></button>
+              <button class="multi-angle-tile active" data-angle-key="front-closeup" data-angle-name="Front Close-up" data-angle-prompt="Front close-up detail shot, 0 degrees with near camera distance for product detail" type="button"><strong>Front Close-up</strong><span>0° / 10° / 1.6x</span></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sticky bottom-0 border-t border-line bg-[#111111] p-5 lg:p-6">
+          <button id="generateMultiBtn" class="w-full cursor-pointer rounded-xl bg-white px-4 py-4 text-base font-semibold text-[#1b1b1b] transition duration-200 hover:opacity-90 active:scale-[0.99] sm:text-lg" type="button">Generate Multi-Angle</button>
+          <p id="multiStatus" class="mt-3 text-center text-sm text-neutral-500">Upload at least one product image to generate selected angles.</p>
+        </div>
+      </aside>
+
+      <section class="multi-preview-panel flex-1 overflow-y-auto bg-[#161616] p-5 custom-scrollbar sm:p-6 lg:p-8">
+        <div class="mx-auto max-w-[1220px]">
+          <div class="mb-8 text-center">
+            <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-[38px]">Multi-Angle Image Generation</h2>
+            <p id="multiHeroSubtitle" class="mt-3 text-base text-neutral-400 sm:text-lg">Upload a product photo, <strong class="text-white">AI generates selected angles automatically</strong></p>
+          </div>
+          <div class="mb-5 flex justify-end">
+            <button id="multiDownloadBtn" class="listing-output-chip" type="button">Unduh Semua</button>
+          </div>
+          <div id="multiPreviewGrid" class="multi-preview-grid">
+            <div class="multi-empty">Belum ada hasil multi-angle yang dihasilkan.</div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section id="background-removal" class="workspace-panel hidden h-full flex">
+      <aside class="bgremove-config-panel flex h-full w-[380px] max-w-full flex-col overflow-y-auto border-r border-line bg-[#111111] custom-scrollbar">
+        <div class="space-y-6 p-5 lg:p-6">
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-sm font-semibold text-white">Upload up to 8 images</label>
+              <span id="bgremoveCount" class="text-sm font-semibold text-neutral-400">0/8</span>
+            </div>
+            <input id="bgremoveUpload" class="hidden" accept="image/*" multiple type="file">
+            <button id="bgremoveUploadBtn" class="group flex w-full cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[#4a4a4a] bg-[#1e1e1e] px-5 py-8 transition-colors hover:border-neutral-400 active:scale-[0.995] sm:px-6 sm:py-10" type="button">
+              <span class="material-symbols-outlined text-4xl text-white">cloud_upload</span>
+              <div class="space-y-1 text-center">
+                <p class="text-xl font-semibold text-white">Click or drag images to upload</p>
+                <p class="text-sm text-neutral-400">Supports JPG, JPEG, PNG, WEBP, max 10MB each</p>
+              </div>
+              <div class="mt-2 flex flex-wrap justify-center gap-3">
+                <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Choose files</span>
+                <span class="rounded-lg bg-[#2b2b2b] px-4 py-2 text-sm font-semibold text-white">Select from library</span>
+              </div>
+            </button>
+            <div id="bgremoveUploadList" class="grid grid-cols-4 gap-2"></div>
+          </div>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Cutout model</span>
+            <div class="relative">
+              <select id="bgremoveModel" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                <option value="quick">Quick Remove (Default)</option>
+                <option value="quick-hd">Quick Remove (HD)</option>
+                <option value="fine">Fine Remove</option>
+                <option value="hair">Hair Detail</option>
+                <option value="portrait">Model Portrait</option>
+                <option value="adaptive">Adaptive Size</option>
+              </select>
+              <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+            </div>
+          </label>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Prompt Preset</span>
+            <div class="relative">
+              <select id="bgremovePromptPreset" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0"></select>
+              <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+            </div>
+          </label>
+
+          <div class="grid grid-cols-2 gap-3">
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Target Bahasa</span>
+              <div class="relative">
+                <select id="bgremoveLanguage" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option value="Indonesia">Indonesia</option>
+                  <option value="English">Inggris</option>
+                  <option value="Chinese">China</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Processing resolution</span>
+              <div class="relative">
+                <select id="bgremoveResolution" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option value="1024">1024</option>
+                  <option value="2048" selected>2048</option>
+                  <option value="4096">4096</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Output format</span>
+              <div class="relative">
+                <select id="bgremoveFormat" class="w-full rounded-lg border border-line bg-[#171717] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                  <option value="png">PNG</option>
+                  <option value="webp">WEBP</option>
+                  <option value="jpg">JPG</option>
+                </select>
+                <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+              </div>
+            </label>
+          </div>
+
+          <div class="rounded-2xl border border-line bg-[#151515] p-4">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-semibold text-white">Refine foreground</p>
+                <p class="mt-1 text-xs text-neutral-400">Second-pass edge refinement for hair and semi-transparent areas</p>
+              </div>
+              <label class="relative inline-flex cursor-pointer items-center">
+                <input id="bgremoveRefine" class="peer sr-only" type="checkbox">
+                <div class="h-6 w-11 rounded-full bg-[#2a2a2a] transition peer-checked:bg-white"></div>
+                <div class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition peer-checked:translate-x-5 peer-checked:bg-black"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="sticky bottom-0 border-t border-line bg-[#111111] p-5 lg:p-6">
+          <button id="generateBgremoveBtn" class="w-full cursor-pointer rounded-xl bg-white px-4 py-4 text-base font-semibold text-[#1b1b1b] transition duration-200 hover:opacity-90 active:scale-[0.99] sm:text-lg" type="button">Remove Background</button>
+          <p id="bgremoveStatus" class="mt-3 text-center text-sm text-neutral-500">Upload images to start background removal.</p>
+        </div>
+      </aside>
+
+      <section class="bgremove-preview-panel flex-1 overflow-y-auto bg-[#161616] p-5 custom-scrollbar sm:p-6 lg:p-8">
+        <div class="mx-auto max-w-[1280px]">
+          <div class="mb-8 text-center">
+            <h2 class="text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-[38px]">AI Background Removal</h2>
+            <p class="mt-3 text-base text-neutral-400 sm:text-lg">Integrated with AI cutout models to remove backgrounds in batch and preview <strong class="text-white">before / after</strong> instantly.</p>
+          </div>
+          <div class="mb-5 flex justify-end">
+            <button id="bgremoveDownloadBtn" class="listing-output-chip" type="button">Unduh Semua</button>
+          </div>
+          <div id="bgremovePreviewGrid" class="bgremove-preview-grid">
+            <div class="bgremove-empty">Belum ada hasil background removal.</div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section id="brand-information" class="workspace-panel hidden h-full w-full overflow-y-auto bg-[#111111] custom-scrollbar">
+      <div class="mx-auto max-w-5xl p-8">
+        <div class="mb-8 space-y-2">
+          <p class="text-[10px] font-bold uppercase tracking-[0.24em] text-neutral-500">Brand</p>
+          <h2 class="text-3xl font-semibold text-white">Brand Information</h2>
+          <p class="text-sm text-neutral-400">Data brand ini akan dipakai sebagai acuan tambahan untuk generate image, prompt analysis, dan kebutuhan visual lain agar hasil tetap konsisten dengan identitas brand Anda.</p>
+        </div>
+
+        <div class="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+          <aside class="rounded-2xl border border-line bg-[#171717] p-5">
+            <div class="space-y-5">
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Logo Brand</span>
+                <input id="brandLogo" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white file:mr-3 file:rounded-lg file:border-0 file:bg-[#202020] file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white" accept="image/*" type="file">
+                <img id="brandLogoPreview" class="hidden h-44 w-full rounded-xl border border-line object-contain bg-[#101010] p-4" alt="Preview logo brand">
+              </label>
+
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Nama Brand</span>
+                <input id="brandName" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Contoh: AJW Official" type="text">
+              </label>
+
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Kategori Produk</span>
+                <input id="brandProductCategory" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Contoh: Fashion wanita, skincare, furniture, elektronik" type="text">
+              </label>
+
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Reputasi Toko</span>
+                <input id="brandStoreReputation" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Contoh: Premium, terpercaya, official store, best seller" type="text">
+              </label>
+
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Deskripsi Lainnya</span>
+                <textarea id="brandDescription" class="h-36 w-full resize-none rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Tambahkan tone brand, positioning, target audience, style visual, USP, warna dominan, atau panduan khusus lain."></textarea>
+              </label>
+
+              <div class="grid grid-cols-2 gap-3">
+                <button id="brandSaveBtn" class="rounded-xl bg-white px-4 py-3 text-sm font-bold text-black transition-opacity hover:opacity-90" type="button">Simpan Brand Info</button>
+                <button id="brandClearBtn" class="rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1d1d1d]" type="button">Reset</button>
+              </div>
+
+              <p id="brandStatus" class="text-sm text-neutral-500">Isi data brand untuk membantu menstabilkan hasil generate.</p>
+            </div>
+          </aside>
+
+          <section class="rounded-2xl border border-line bg-[#171717] p-5">
+            <div class="mb-5 space-y-1">
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Preview Context</p>
+              <h3 class="text-lg font-semibold text-white">Brand Prompt Reference</h3>
+              <p class="text-sm text-neutral-400">Ringkasan ini akan otomatis dikirim sebagai acuan tambahan ke proses generate image dan analisis GPT.</p>
+            </div>
+
+            <div id="brandReferenceCard" class="rounded-2xl border border-line bg-[#101010] p-5">
+              <div class="space-y-4">
+                <div class="flex items-start gap-4">
+                  <div class="flex h-20 w-20 items-center justify-center overflow-hidden rounded-xl border border-line bg-[#171717]">
+                    <img id="brandReferenceLogo" class="hidden h-full w-full object-contain p-2" alt="Brand reference logo">
+                    <span id="brandReferenceLogoPlaceholder" class="text-[11px] font-bold uppercase tracking-[0.18em] text-neutral-500">No Logo</span>
+                  </div>
+                  <div class="space-y-1">
+                    <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Brand Summary</p>
+                    <h4 id="brandReferenceName" class="text-xl font-semibold text-white">Belum ada nama brand</h4>
+                    <p id="brandReferenceMeta" class="text-sm text-neutral-400">Tambahkan kategori produk dan reputasi toko untuk memperkaya konteks generate.</p>
+                  </div>
+                </div>
+
+                <div class="space-y-2">
+                  <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Applied Generation Context</p>
+                  <pre id="brandReferencePrompt" class="whitespace-pre-wrap rounded-xl border border-line bg-[#171717] p-4 text-sm leading-6 text-neutral-300">Brand context belum diisi.</pre>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="admin-tab" class="workspace-panel hidden h-full w-full overflow-y-auto bg-[#111111] custom-scrollbar">
+      <div class="max-w-3xl space-y-6 p-8">
+        <div class="space-y-2">
+          <p class="text-[10px] font-bold uppercase tracking-[0.24em] text-neutral-500">Admin</p>
+          <h2 class="text-3xl font-semibold text-white">Pengaturan API</h2>
+        </div>
+
+        <div class="grid gap-5 lg:grid-cols-2">
+          <section class="space-y-4 rounded-2xl border border-line bg-[#171717] p-5">
+            <div class="space-y-1">
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">API GPT</p>
+              <h3 class="text-lg font-semibold text-white">OpenAI / GPT</h3>
+            </div>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">API Base</span>
+              <input id="gptApiBaseUrl" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white focus:border-white focus:ring-0" type="text" value="https://api.openai.com/v1">
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">API Key</span>
+              <input id="gptApiKey" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="sk-..." type="password">
+            </label>
+            <div class="flex items-center gap-3">
+              <button id="testGptConnectionBtn" class="rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1d1d1d]" type="button">Test Koneksi</button>
+              <span id="gptConnectionStatus" class="text-sm text-neutral-500">Belum dites</span>
+            </div>
+          </section>
+
+          <section class="space-y-4 rounded-2xl border border-line bg-[#171717] p-5">
+            <div class="space-y-1">
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">API Gemini</p>
+              <h3 class="text-lg font-semibold text-white">Google Gemini</h3>
+            </div>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">API Base</span>
+              <input id="geminiApiBaseUrl" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white focus:border-white focus:ring-0" type="text" value="https://generativelanguage.googleapis.com/v1beta">
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">API Key</span>
+              <input id="geminiApiKey" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="AIza..." type="password">
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Model</span>
+              <input id="geminiImageModel" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="gemini-2.0-flash-preview-image-generation" type="text">
+            </label>
+            <div class="flex items-center gap-3">
+              <button id="testGeminiConnectionBtn" class="rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1d1d1d]" type="button">Test Koneksi</button>
+              <span id="geminiConnectionStatus" class="text-sm text-neutral-500">Belum dites</span>
+            </div>
+          </section>
+        </div>
+
+        <div class="grid gap-5 lg:grid-cols-2">
+          <section class="space-y-4 rounded-2xl border border-line bg-[#171717] p-5">
+            <div class="space-y-1">
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">API Custom</p>
+              <h3 class="text-lg font-semibold text-white">Custom Provider</h3>
+            </div>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Provider Name</span>
+              <input id="customProviderName" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Contoh: OpenRouter / Internal API" type="text">
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">API Base</span>
+              <input id="customApiBaseUrl" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="https://provider.example.com/v1" type="text">
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">API Key</span>
+              <input id="customApiKey" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="custom-api-key" type="password">
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Model</span>
+              <input id="customImageModel" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="provider/model-name" type="text">
+            </label>
+            <div class="flex items-center gap-3">
+              <button id="testCustomConnectionBtn" class="rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1d1d1d]" type="button">Test Koneksi</button>
+              <span id="customConnectionStatus" class="text-sm text-neutral-500">Belum dites</span>
+            </div>
+          </section>
+
+          <section class="space-y-4 rounded-2xl border border-line bg-[#171717] p-5">
+            <div class="space-y-1">
+              <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Supabase</p>
+              <h3 class="text-lg font-semibold text-white">Database & Storage</h3>
+            </div>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Supabase URL</span>
+              <input id="supabaseUrl" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="https://xxx.supabase.co" type="text">
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Supabase Anon Key</span>
+              <input id="supabaseAnonKey" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="eyJ..." type="password">
+            </label>
+            <label class="space-y-2">
+              <span class="block text-sm font-semibold text-white">Video Model</span>
+              <input id="videoModel" class="w-full rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white focus:border-white focus:ring-0" type="text" value="sora-2">
+            </label>
+          </section>
+        </div>
+
+        <label class="space-y-2">
+          <span class="block text-sm font-semibold text-white">Polling Interval</span>
+          <input id="pollInterval" class="w-full rounded-xl border border-line bg-[#171717] px-4 py-3 text-sm text-white focus:border-white focus:ring-0" min="2000" step="1000" type="number" value="10000">
+        </label>
+
+        <div class="grid grid-cols-2 gap-4">
+          <button id="saveSettingsBtn" class="rounded-xl bg-white px-4 py-3 text-sm font-bold text-black transition-opacity hover:opacity-90" type="button">Simpan Setting</button>
+          <button id="clearSettingsBtn" class="rounded-xl border border-line bg-[#171717] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#242424]" type="button">Hapus Setting</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="prompt-hub" class="workspace-panel hidden h-full w-full overflow-y-auto bg-[#111111] custom-scrollbar">
+      <div class="mx-auto max-w-6xl p-8">
+        <div class="mb-8 space-y-2">
+          <p class="text-[10px] font-bold uppercase tracking-[0.24em] text-neutral-500">Prompt</p>
+          <h2 class="text-3xl font-semibold text-white">Prompt Manager</h2>
+          <p class="text-sm text-neutral-400">Kelola prompt preset untuk Listing Images, A+ Content, Multi-Angle, dan Background Removal.</p>
+        </div>
+
+        <section class="mb-6 rounded-2xl border border-line bg-[#171717] p-5">
+          <div class="mb-4 space-y-1">
+            <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-neutral-500">Global Core</p>
+            <h3 class="text-lg font-semibold text-white">Prompt Core</h3>
+            <p class="text-sm text-neutral-400">Prompt dasar global untuk menjaga hasil generate tetap stabil, konsisten, natural, dan tidak mengubah objek utama.</p>
+          </div>
+
+          <label class="space-y-2">
+            <span class="block text-sm font-semibold text-white">Core Prompt Content</span>
+            <textarea id="promptCore" class="h-40 w-full resize-none rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Prompt dasar global untuk menstabilkan hasil generate..."></textarea>
+            <p class="text-xs text-neutral-500">Prompt Core ini otomatis ikut menjadi acuan di Listing Images, A+ Content, Multi-Angle, dan Background Removal.</p>
+          </label>
+        </section>
+
+        <div class="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <aside class="rounded-2xl border border-line bg-[#171717] p-5">
+            <div class="space-y-4">
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Feature</span>
+                <div class="relative">
+                  <select id="promptFeature" class="w-full rounded-lg border border-line bg-[#101010] px-3 py-3 text-sm text-white focus:border-white focus:ring-0">
+                    <option value="listing">Listing Images</option>
+                    <option value="aplus">A+ Content</option>
+                    <option value="multi_angle">Multi-Angle</option>
+                    <option value="bgremove">Background Removal</option>
+                  </select>
+                  <span class="material-symbols-outlined pointer-events-none absolute right-3 top-3 text-neutral-500">expand_more</span>
+                </div>
+              </label>
+
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Prompt Title</span>
+                <input id="promptTitle" class="w-full rounded-lg border border-line bg-[#101010] px-3 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Contoh: Premium Hero Marketplace" type="text">
+              </label>
+
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Prompt Key</span>
+                <input id="promptKey" class="w-full rounded-lg border border-line bg-[#101010] px-3 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="auto-generated-key" type="text">
+              </label>
+
+              <label class="space-y-2">
+                <span class="block text-sm font-semibold text-white">Prompt Content</span>
+                <textarea id="promptContent" class="h-64 w-full resize-none rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-white focus:ring-0" placeholder="Tulis prompt preset di sini..."></textarea>
+              </label>
+
+              <div class="grid grid-cols-3 gap-3">
+                <button id="promptNewBtn" class="rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1d1d1d]" type="button">Baru</button>
+                <button id="promptSaveBtn" class="rounded-xl bg-white px-4 py-3 text-sm font-bold text-black transition-opacity hover:opacity-90" type="button">Simpan</button>
+                <button id="promptDeleteBtn" class="rounded-xl border border-line bg-[#101010] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#1d1d1d]" type="button">Hapus</button>
+              </div>
+
+              <p id="promptStatus" class="text-sm text-neutral-500">Pilih feature lalu kelola preset prompt-nya.</p>
+            </div>
+          </aside>
+
+          <section class="rounded-2xl border border-line bg-[#171717] p-5">
+            <div class="mb-5 flex items-center justify-between">
+              <div>
+                <h3 class="text-lg font-semibold text-white">Preset List</h3>
+                <p class="text-sm text-neutral-400">Klik prompt untuk edit. Semua perubahan langsung terintegrasi ke elemen form terkait.</p>
+              </div>
+              <span id="promptCount" class="rounded-full border border-line bg-[#101010] px-3 py-1 text-xs font-bold uppercase tracking-wider text-neutral-300">0 preset</span>
+            </div>
+            <div id="promptList" class="grid gap-3 md:grid-cols-2"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
+
+
