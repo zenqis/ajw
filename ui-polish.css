@@ -1,0 +1,752 @@
+/* ============================================================
+   AJW UI REVISION v20260507.6 — Linear/Vercel/Notion admin
+   Top nav HORIZONTAL (tidak diubah).
+   Pure CSS override — zero JS / HTML / routing changes.
+   Container 1280px center · neutral labels · tight spacing.
+============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ─────────────────────────────────────────────
+   1. DESIGN TOKENS — flat 2-layer, 3 text levels
+   ───────────────────────────────────────────── */
+:root{
+  --bg-base:#0A0A0A;
+  --bg-surface:#141414;
+  --bg-elevated:#1C1C1C;
+  --bg-input:#161616;
+
+  --border:rgba(255,255,255,.07);
+  --border-hover:rgba(255,255,255,.12);
+
+  --text-1:#F5F5F5;
+  --text-2:#9CA3AF;
+  --text-3:#6B7280;
+
+  --accent:#FBBF24;
+  --accent-soft:rgba(251,191,36,.10);
+
+  --success:#34D399;
+  --success-bg:rgba(52,211,153,.10);
+  --warning:#FBBF24;
+  --warning-bg:rgba(251,191,36,.10);
+  --danger:#F87171;
+  --danger-bg:rgba(248,113,113,.10);
+  --info:#60A5FA;
+  --info-bg:rgba(96,165,250,.10);
+
+  --radius:8px;
+  --radius-card:10px;
+}
+
+[data-theme=dark]{
+  --bg:#0A0A0A !important;
+  --bg2:#141414 !important;
+  --bg3:#1C1C1C !important;
+  --bg4:#1F1F1F !important;
+  --bd:rgba(255,255,255,.07) !important;
+  --bd2:rgba(255,255,255,.12) !important;
+  --tx:#F5F5F5 !important;
+  --tx2:#9CA3AF !important;
+  --tx3:#6B7280 !important;
+  --ac:#FBBF24 !important;
+  --navy:#141414 !important;
+  --teal:#34D399 !important;
+  --green:#34D399 !important;
+  --red:#F87171 !important;
+  --orange:#FBBF24 !important;
+  --blue:#60A5FA !important;
+  --purple:#A78BFA !important;
+  --amber:#FBBF24 !important;
+  --gold:#FBBF24 !important;
+  --r:10px !important;
+  --rs:8px !important;
+  --sh:none !important;
+  --sh2:none !important;
+}
+
+/* ─────────────────────────────────────────────
+   2. BASE
+   ───────────────────────────────────────────── */
+html{ font-size:14px !important; background:#0A0A0A; }
+html[style*="font-size:17px"]{ font-size:14px !important; }
+body{
+  background:#0A0A0A !important;
+  color:#F5F5F5 !important;
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important;
+  font-size:13px !important;
+  line-height:1.5 !important;
+  font-feature-settings:'tnum' 1,'cv11' 1,'ss01' 1;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+body[style*="font-size:16px"]{ font-size:13px !important; }
+
+.tbl, .tbl td, .tbl th,
+[class*="metric"], [class*="kpi"], [class*="value"],
+.fi[type=number]{ font-variant-numeric:tabular-nums; }
+
+/* ─────────────────────────────────────────────
+   3. TOPBAR
+   ───────────────────────────────────────────── */
+.topbar{
+  background:#0A0A0A !important;
+  border-bottom:1px solid rgba(255,255,255,.07) !important;
+  box-shadow:none !important;
+  padding:10px 24px !important;
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  position:sticky;
+  top:0;
+  z-index:60;
+}
+
+/* ─────────────────────────────────────────────
+   4. TOP NAV BAR (HORIZONTAL — tetap)
+   ───────────────────────────────────────────── */
+#TABS, .tabs{
+  background:#0A0A0A !important;
+  border-bottom:1px solid rgba(255,255,255,.07) !important;
+  padding:6px 24px !important;
+  gap:2px !important;
+  display:flex !important;
+  align-items:center;
+  flex-wrap:wrap;
+  position:sticky;
+  top:54px;
+  z-index:50;
+  box-shadow:none !important;
+  flex-direction:row !important;
+  height:auto !important;
+  width:auto !important;
+}
+.tab{
+  height:34px !important;
+  padding:0 14px !important;
+  border-radius:8px !important;
+  border:1px solid transparent !important;
+  background:transparent !important;
+  color:#9CA3AF !important;
+  font-size:13px !important;
+  font-weight:500 !important;
+  letter-spacing:0;
+  display:inline-flex !important;
+  align-items:center;
+  margin:0 !important;
+  transition:background 150ms ease, color 150ms ease;
+  cursor:pointer;
+  text-transform:none !important;
+}
+.tab.on:hover{ background:rgba(255,255,255,.04) !important; color:#F5F5F5 !important; }
+.tab.act{
+  background:rgba(251,191,36,.10) !important;
+  color:#FBBF24 !important;
+  font-weight:600 !important;
+  border-color:transparent !important;
+}
+.tab-brand{
+  color:#F5F5F5 !important;
+  font-weight:700 !important;
+  font-size:11px !important;
+  padding:0 16px 0 4px !important;
+  letter-spacing:.10em !important;
+  text-transform:uppercase;
+  border:none !important;
+  border-right:1px solid rgba(255,255,255,.07) !important;
+  margin:0 8px 0 0 !important;
+  height:30px;
+  display:inline-flex;
+  align-items:center;
+}
+
+/* ─────────────────────────────────────────────
+   5. PAGE / BODY — 1280px center
+   ───────────────────────────────────────────── */
+.body{
+  background:#0A0A0A;
+  padding:20px 24px 28px !important;
+  max-width:1280px !important;
+  margin-inline:auto !important;
+}
+@media (max-width:900px){ .body{ padding:16px !important; } }
+
+/* ─────────────────────────────────────────────
+   6. CARD — compact, single border
+   ───────────────────────────────────────────── */
+.card{
+  background:#141414 !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  border-radius:10px !important;
+  padding:16px !important;
+  margin-bottom:16px !important;
+  box-shadow:none !important;
+  transition:border-color 150ms ease;
+}
+.card:hover{ border-color:rgba(255,255,255,.12) !important; box-shadow:none !important; transform:none !important; }
+/* Nested cards become flat — no double border */
+.card .card{
+  margin-bottom:10px !important;
+  background:#1C1C1C !important;
+  border-color:rgba(255,255,255,.07) !important;
+  padding:14px !important;
+}
+.card h1, .card h2, .card h3, .card h4{
+  color:#F5F5F5;
+  font-weight:600;
+  line-height:1.3;
+  margin:0 0 8px 0;
+}
+
+/* Section title pattern (modules use inline font-weight:800 + amber color) */
+.card div[style*="font-weight:800"][style*="color:var(--tx)"],
+.card div[style*="font-weight:800"][style*="color:#FFD68A"],
+.card div[style*="font-weight:800"][style*="color:#A7F3B6"]{
+  font-weight:600 !important;
+  color:#F5F5F5 !important;
+  letter-spacing:0;
+  font-size:14px !important;
+}
+
+/* ─────────────────────────────────────────────
+   7. STAT / KPI CARDS — flatten color accents
+   ───────────────────────────────────────────── */
+.body div[style*="grid-template-columns:repeat(auto-fit,minmax("] > div,
+.body div[style*="grid-template-columns: repeat(auto-fit, minmax("] > div,
+.body div[style*="grid-template-columns:repeat("][style*=",1fr)"] > div{
+  background:#141414 !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  border-radius:10px !important;
+  padding:16px !important;
+  position:relative !important;
+  overflow:hidden;
+  transition:border-color 150ms ease;
+  min-height:0 !important;
+}
+.body div[style*="grid-template-columns:repeat(auto-fit"] > div:hover,
+.body div[style*="grid-template-columns:repeat("][style*=",1fr)"] > div:hover{
+  border-color:rgba(255,255,255,.12) !important;
+}
+
+/* Kill the colored top/left accent strips on KPI cards */
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="position:absolute"][style*="height:2px"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="position:absolute"][style*="width:2px"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="position:absolute"][style*="top:0"][style*="left:0"][style*="right:0"]{
+  display:none !important;
+}
+
+/* Force ALL KPI labels to neutral gray — no rainbow */
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="text-transform:uppercase"]{
+  font-size:11px !important;
+  font-weight:500 !important;
+  letter-spacing:.05em !important;
+  margin-bottom:8px !important;
+  color:#9CA3AF !important;
+}
+
+/* KPI big number — 22px tabular */
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:18px"][style*="font-weight:800"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:20px"][style*="font-weight:800"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:22px"][style*="font-weight:800"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:22px"][style*="font-weight:700"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:24px"][style*="font-weight:800"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:24px"][style*="font-weight:700"]{
+  font-size:22px !important;
+  font-weight:600 !important;
+  color:#F5F5F5 !important;
+  letter-spacing:-.01em !important;
+  font-variant-numeric:tabular-nums !important;
+  line-height:1.2 !important;
+}
+
+/* KPI sub-text */
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:10px"][style*="color:var(--tx2)"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:11px"][style*="color:var(--tx2)"],
+.body div[style*="grid-template-columns:repeat"] > div > div[style*="font-size:11px"][style*="color:var(--tx3)"]{
+  font-size:12px !important;
+  color:#6B7280 !important;
+  margin-top:6px !important;
+  font-weight:400 !important;
+}
+
+/* Tighten KPI grid gaps */
+.body div[style*="grid-template-columns:repeat(auto-fit"],
+.body div[style*="grid-template-columns: repeat(auto-fit"],
+.body div[style*="grid-template-columns:repeat("][style*=",1fr)"]{
+  gap:12px !important;
+}
+
+/* ─────────────────────────────────────────────
+   8. TABLES
+   ───────────────────────────────────────────── */
+.tbl{
+  width:100%;
+  background:#141414;
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:10px;
+  overflow:hidden;
+  border-collapse:separate !important;
+  border-spacing:0;
+  font-size:13px;
+}
+.tbl thead{ background:#1C1C1C; }
+.tbl th{
+  background:#1C1C1C !important;
+  color:#9CA3AF !important;
+  font-size:11px !important;
+  font-weight:500 !important;
+  letter-spacing:.05em !important;
+  text-transform:uppercase !important;
+  border:none !important;
+  border-bottom:1px solid rgba(255,255,255,.07) !important;
+  padding:10px 14px !important;
+  text-align:left;
+  vertical-align:middle;
+  white-space:nowrap;
+}
+.tbl td{
+  border:none !important;
+  border-bottom:1px solid rgba(255,255,255,.05) !important;
+  padding:10px 14px !important;
+  font-size:13px !important;
+  color:#E5E5E5 !important;
+  vertical-align:middle;
+  background:transparent !important;
+  line-height:1.4;
+}
+.tbl tr:last-child td{ border-bottom:none !important; }
+.tbl tbody tr{ transition:background 100ms ease; }
+.tbl tbody tr:hover td{ background:rgba(255,255,255,.025) !important; }
+.tbl td.c, .tbl th.c{ text-align:center; }
+.tbl td.r, .tbl th.r{
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+  font-weight:500;
+}
+
+.tbl td .btnp, .tbl td .btns, .tbl td .btna, .tbl td .btnsm{
+  height:26px !important;
+  padding:0 10px !important;
+  font-size:11px !important;
+}
+
+/* ─────────────────────────────────────────────
+   9. FORMS
+   ───────────────────────────────────────────── */
+input.fi, select.fi, textarea.fi, .fi{
+  background:#161616 !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  color:#F5F5F5 !important;
+  height:36px !important;
+  border-radius:8px !important;
+  padding:0 12px !important;
+  font-size:13px !important;
+  font-family:inherit !important;
+  box-shadow:none !important;
+  transition:border-color 150ms ease, box-shadow 150ms ease;
+  box-sizing:border-box;
+}
+textarea.fi{
+  height:auto !important;
+  min-height:80px;
+  padding:10px 12px !important;
+  resize:vertical;
+}
+select.fi{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%239CA3AF' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E") !important;
+  background-repeat:no-repeat !important;
+  background-position:right 12px center !important;
+  padding-right:32px !important;
+  appearance:none;
+  -webkit-appearance:none;
+}
+input.fi:focus, select.fi:focus, textarea.fi:focus, .fi:focus{
+  border-color:#FBBF24 !important;
+  box-shadow:0 0 0 3px rgba(251,191,36,.12) !important;
+  outline:none !important;
+}
+input.fi::placeholder, textarea.fi::placeholder{ color:#4B4B4B !important; }
+input[type=checkbox]{ accent-color:#FBBF24; }
+
+label.lbl, .lbl{
+  color:#9CA3AF !important;
+  font-size:11px !important;
+  font-weight:500 !important;
+  margin-bottom:6px !important;
+  display:block;
+  letter-spacing:.05em;
+  text-transform:uppercase;
+}
+
+/* ─────────────────────────────────────────────
+   10. BUTTONS
+   ───────────────────────────────────────────── */
+.btnp{
+  background:#FBBF24 !important;
+  color:#0A0A0A !important;
+  height:36px !important;
+  border-radius:8px !important;
+  padding:0 16px !important;
+  font-size:13px !important;
+  font-weight:600 !important;
+  border:none !important;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  cursor:pointer;
+  transition:filter 150ms ease;
+}
+.btnp:hover{ background:#FBBF24 !important; filter:brightness(1.08) !important; opacity:1 !important; transform:none !important; }
+.btnp:active{ filter:brightness(.95) !important; }
+
+.btns{
+  background:#1C1C1C !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  color:#F5F5F5 !important;
+  height:36px !important;
+  border-radius:8px !important;
+  padding:0 14px !important;
+  font-size:13px !important;
+  font-weight:500 !important;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  cursor:pointer;
+  transition:background 150ms ease, border-color 150ms ease;
+}
+.btns:hover{ background:#1F1F1F !important; border-color:rgba(255,255,255,.12) !important; }
+
+.btna{
+  background:#1C1C1C !important;
+  color:#F5F5F5 !important;
+  border-radius:8px !important;
+  padding:7px 12px !important;
+  font-size:12px !important;
+  font-weight:500 !important;
+  border:1px solid transparent !important;
+  cursor:pointer;
+  transition:background 150ms ease;
+}
+.btna:hover{ background:#1F1F1F !important; opacity:1 !important; transform:none !important; }
+
+.btnsm{
+  background:#1C1C1C !important;
+  color:#F5F5F5 !important;
+  border-radius:6px !important;
+  padding:4px 10px !important;
+  font-size:11px !important;
+  font-weight:500 !important;
+  border:none !important;
+  cursor:pointer;
+}
+.btnsm:hover{ background:#1F1F1F !important; }
+
+/* ─────────────────────────────────────────────
+   11. CHIPS / META PILLS
+   ───────────────────────────────────────────── */
+.chip{
+  background:#1C1C1C;
+  color:#9CA3AF;
+  padding:3px 10px !important;
+  border-radius:999px !important;
+  font-size:11px !important;
+  font-weight:500 !important;
+  border:1px solid rgba(255,255,255,.07);
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  line-height:1.4;
+}
+
+/* ─────────────────────────────────────────────
+   12. TOAST
+   ───────────────────────────────────────────── */
+.toast{
+  background:#141414 !important;
+  color:#F5F5F5 !important;
+  border:1px solid rgba(255,255,255,.12) !important;
+  border-radius:10px !important;
+  box-shadow:0 12px 40px rgba(0,0,0,.6) !important;
+  font-size:13px !important;
+  font-weight:500 !important;
+  padding:12px 16px !important;
+}
+
+/* ─────────────────────────────────────────────
+   13. SUB-TAB BAR (Finance / Content / etc.)
+   ───────────────────────────────────────────── */
+#FIN-SHELL{
+  background:#141414 !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  border-radius:10px !important;
+  padding:4px !important;
+  margin-bottom:16px !important;
+}
+#FIN-SHELL .card{
+  padding:0 !important;
+  margin:0 !important;
+  background:transparent !important;
+  border:none !important;
+}
+#FIN-SHELL .card > div{
+  display:flex !important;
+  flex-wrap:wrap !important;
+  gap:2px !important;
+}
+#FIN-SHELL .btnp, #FIN-SHELL .btns{
+  height:30px !important;
+  font-size:12.5px !important;
+  padding:0 14px !important;
+  border-radius:7px !important;
+  background:transparent !important;
+  border:1px solid transparent !important;
+  color:#9CA3AF !important;
+  font-weight:500 !important;
+}
+#FIN-SHELL .btnp{
+  background:rgba(251,191,36,.10) !important;
+  color:#FBBF24 !important;
+  font-weight:600 !important;
+}
+#FIN-SHELL .btns:hover{
+  background:rgba(255,255,255,.04) !important;
+  color:#F5F5F5 !important;
+}
+
+/* ─────────────────────────────────────────────
+   14. SUPPLIER MODULE
+   ───────────────────────────────────────────── */
+.sup-shell{ padding:0 !important; }
+.sup-toolbar{
+  background:transparent !important;
+  border:none !important;
+  padding:0 !important;
+  margin-bottom:14px !important;
+}
+.sup-nav{
+  display:flex !important;
+  flex-wrap:wrap !important;
+  gap:2px !important;
+  margin-top:12px !important;
+  padding:4px !important;
+  background:#141414 !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  border-radius:10px !important;
+  width:fit-content;
+  max-width:100%;
+}
+.sup-nav-btn{
+  height:30px !important;
+  padding:0 14px !important;
+  border-radius:7px !important;
+  border:1px solid transparent !important;
+  background:transparent !important;
+  color:#9CA3AF !important;
+  font-size:12.5px !important;
+  font-weight:500 !important;
+  cursor:pointer;
+  transition:background 150ms ease, color 150ms ease;
+  display:inline-flex;
+  align-items:center;
+}
+.sup-nav-btn:hover{ background:rgba(255,255,255,.04) !important; color:#F5F5F5 !important; }
+.sup-nav-btn.on{
+  background:rgba(251,191,36,.10) !important;
+  color:#FBBF24 !important;
+  font-weight:600 !important;
+}
+.sup-soft-chip{
+  background:#1C1C1C !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  color:#9CA3AF !important;
+  padding:4px 10px !important;
+  border-radius:999px !important;
+  font-size:11px !important;
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:6px !important;
+  font-weight:500;
+}
+.sup-soft-chip b{ color:#F5F5F5 !important; font-weight:600 !important; }
+.sup-filter-pills{
+  display:flex !important;
+  flex-wrap:wrap !important;
+  gap:5px !important;
+  align-items:center !important;
+  margin-top:10px !important;
+  padding:10px 12px !important;
+  background:#141414 !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  border-radius:10px !important;
+}
+.sup-tip{
+  color:#6B7280 !important;
+  font-size:11px !important;
+  margin-right:6px;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+  font-weight:500;
+}
+.sup-pill{
+  background:transparent !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+  color:#9CA3AF !important;
+  height:26px !important;
+  padding:0 11px !important;
+  border-radius:999px !important;
+  font-size:11.5px !important;
+  font-weight:500 !important;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  transition:background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+.sup-pill:hover{ background:#1C1C1C !important; color:#F5F5F5 !important; }
+.sup-pill.on{
+  background:rgba(251,191,36,.10) !important;
+  border-color:rgba(251,191,36,.30) !important;
+  color:#FBBF24 !important;
+}
+.sup-section{ padding:0 !important; }
+.sup-hutang-meta{
+  display:flex;
+  gap:18px;
+  font-size:11px;
+  color:#9CA3AF;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-end;
+  font-variant-numeric:tabular-nums;
+}
+.sup-hutang-meta b{ color:#F5F5F5; font-weight:600; margin-left:4px; }
+
+/* ─────────────────────────────────────────────
+   15. MODALS
+   ───────────────────────────────────────────── */
+[id^="M-"][style*="display:flex"]{
+  background:rgba(0,0,0,.78) !important;
+  backdrop-filter:blur(6px);
+  z-index:1000 !important;
+}
+[id^="M-"] > div, [id^="M-"] > .card{
+  background:#141414 !important;
+  border:1px solid rgba(255,255,255,.12) !important;
+  border-radius:12px !important;
+  box-shadow:0 20px 60px rgba(0,0,0,.7) !important;
+}
+
+/* ─────────────────────────────────────────────
+   16. SCROLLBARS
+   ───────────────────────────────────────────── */
+*{ scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.10) transparent; }
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-track{ background:transparent; }
+::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.08); border-radius:4px; }
+::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.14); }
+::-webkit-scrollbar-corner{ background:transparent; }
+
+/* ─────────────────────────────────────────────
+   17. TYPOGRAPHY
+   ───────────────────────────────────────────── */
+h1{ font-size:20px; font-weight:600; color:#F5F5F5; line-height:1.25; margin:0 0 6px; letter-spacing:-.01em; }
+h2{ font-size:16px; font-weight:600; color:#F5F5F5; line-height:1.3; margin:0 0 6px; }
+h3{ font-size:14px; font-weight:600; color:#F5F5F5; line-height:1.35; margin:0 0 8px; }
+h4{ font-size:13px; font-weight:600; color:#F5F5F5; line-height:1.4; margin:0 0 6px; }
+
+/* ─────────────────────────────────────────────
+   18. LINKS
+   ───────────────────────────────────────────── */
+a{ color:#60A5FA; text-decoration:none; }
+a:hover{ color:#93C5FD; }
+
+/* ─────────────────────────────────────────────
+   19. NEUTRALIZE colored labels & vivid inline colors
+   Section titles forced WHITE, KPI labels forced GRAY
+   Yellow accent reserved ONLY for active tab + primary button
+   ───────────────────────────────────────────── */
+
+/* Map vivid inline pastel colors → muted tokens */
+[style*="color:#FFD68A"]{ color:#9CA3AF !important; }
+[style*="color:#FF9D9D"]{ color:#F87171 !important; }
+[style*="color:#A7F3B6"]{ color:#9CA3AF !important; }
+[style*="color:#8FD0FF"]{ color:#9CA3AF !important; }
+[style*="color:#D796FF"]{ color:#9CA3AF !important; }
+[style*="color:#FFB6B6"]{ color:#F87171 !important; }
+[style*="color:#FFB930"]{ color:#9CA3AF !important; }
+[style*="color:#F0C56A"]{ color:#9CA3AF !important; }
+[style*="color:#10B981"]{ color:#34D399 !important; }
+[style*="color:#1E3A5F"]{ color:#60A5FA !important; }
+[style*="color:#C62828"]{ color:#F87171 !important; }
+
+/* Section title in cards (color:#FFD68A pattern from Hutang Supplier etc) */
+.card div[style*="color:#FFD68A"][style*="font-weight:800"],
+.card div[style*="color:#A7F3B6"][style*="font-weight:800"]{
+  color:#F5F5F5 !important;
+  font-weight:600 !important;
+  font-size:14px !important;
+}
+
+/* Soft background patterns inside cards */
+[style*="background:var(--bg3)"]{ background:#1C1C1C !important; border-color:rgba(255,255,255,.07) !important; }
+[style*="background:rgba(255,255,255,.04)"]{ background:#1C1C1C !important; }
+[style*="background:rgba(255,255,255,.02)"]{ background:transparent !important; }
+[style*="background:rgba(255,255,255,.01)"]{ background:transparent !important; }
+[style*="background:rgba(255,255,255,.06)"]{ background:#1C1C1C !important; }
+[style*="background:rgba(255,255,255,.012)"]{ background:transparent !important; }
+[style*="background:rgba(255,255,255,.015)"]{ background:transparent !important; }
+
+/* Tone down vivid gradient cards */
+[style*="background:linear-gradient(135deg,rgba(255,214,138"],
+[style*="background:linear-gradient(135deg,rgba(255,183,107"],
+[style*="background:linear-gradient(135deg,rgba(251,191,36"]{
+  background:#141414 !important;
+  border:1px solid rgba(255,255,255,.07) !important;
+}
+/* Progress bar gradient → flat amber */
+[style*="background:linear-gradient(90deg"]{ background:#FBBF24 !important; }
+
+/* ─────────────────────────────────────────────
+   20. ALERT CARDS (Bigseller/Duoke) — preserve red border-left
+   ───────────────────────────────────────────── */
+[style*="border-left:2px solid #C62828"],
+[style*="border-left:3px solid #C62828"],
+[style*="border-left:4px solid #C62828"]{
+  border-left:2px solid #F87171 !important;
+  background:#1C1C1C !important;
+  border-radius:8px !important;
+}
+
+/* ─────────────────────────────────────────────
+   21. UTIL / SPACING — tighter
+   ───────────────────────────────────────────── */
+*:focus-visible{ outline:2px solid rgba(251,191,36,.5); outline-offset:1px; border-radius:6px; }
+
+[id^="V-"]{ background:transparent; }
+
+/* Tighten bloated inline margins/paddings */
+[style*="margin-bottom:24px"]{ margin-bottom:16px !important; }
+[style*="margin-bottom:30px"]{ margin-bottom:16px !important; }
+[style*="margin-bottom:20px"]{ margin-bottom:14px !important; }
+[style*="margin-top:24px"]{ margin-top:16px !important; }
+[style*="margin-top:20px"]{ margin-top:14px !important; }
+[style*="padding:24px"]{ padding:16px !important; }
+[style*="padding:30px"]{ padding:18px !important; }
+[style*="padding:20px"]{ padding:16px !important; }
+
+/* ─────────────────────────────────────────────
+   22. INLINE FONT-WEIGHT NORMALIZATION
+   ───────────────────────────────────────────── */
+[style*="font-weight:800"]{ font-weight:600 !important; }
+
+/* Big metric numbers from modules — cap at 22px */
+[style*="font-size:32px"]{ font-size:24px !important; font-variant-numeric:tabular-nums !important; letter-spacing:-.01em !important; }
+[style*="font-size:28px"]{ font-size:22px !important; font-variant-numeric:tabular-nums !important; letter-spacing:-.01em !important; }
+[style*="font-size:24px"]{ font-variant-numeric:tabular-nums !important; letter-spacing:-.01em !important; }
+
+/* ─────────────────────────────────────────────
+   23. CHARTS — mute vivid stroke colors
+   ───────────────────────────────────────────── */
+canvas{ max-height:240px !important; }
+[id*="chart"] canvas, [id*="Chart"] canvas, [id*="CHART"] canvas{ max-height:240px !important; }

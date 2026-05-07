@@ -246,6 +246,7 @@ html,body{font-size:14px;line-height:1.6;}
   <div id="V-supplier" style="display:none"></div>
   <div id="V-taligf" style="display:none"></div>
   <div id="V-tools" style="display:none"></div>
+  <div id="V-content" style="display:none"></div>
   <div id="V-development" style="display:none"></div>
   <div id="V-admin" style="display:none"></div>
 
@@ -259,6 +260,10 @@ html,body{font-size:14px;line-height:1.6;}
 <script src="modules/ui/hr/panels.js?v=20260502.9"></script>
 <script src="modules/ui/hr/renderHR.js?v=20260502.7"></script>
 <script src="modules/ui/finance/renderFinance.js?v=20260502.7"></script>
+<script src="modules/ui/operasional/renderOperasional.js?v=20260507.1"></script>
+<script src="modules/ui/content/renderContent.js?v=20260507.1"></script>
+<script src="modules/ui/supplier/renderSupplier.js?v=20260507.1"></script>
+<script src="modules/ui/tools/renderVideo.js?v=20260507.1"></script>
 <script>
 
 var LOGO_SRC=document.getElementById('LG').src;
@@ -3726,7 +3731,6 @@ buildTabBar = function(){
     {id:'stats',lbl:'\uD83D\uDCCA Statistik'},
     {id:'emp',lbl:'\uD83D\uDC65 Karyawan'},
     {id:'hist',lbl:'\uD83D\uDCDC Riwayat'},
-    {id:'kpi',lbl:'\uD83D\uDCCA KPI Bisnis'},
     {id:'finansial',lbl:'\uD83D\uDCB5 Finansial'},
     {id:'operasional',lbl:'\u2699\uFE0F Operasional'},
     {id:'admin',lbl:'\uD83D\uDD27 Admin'}
@@ -9545,7 +9549,6 @@ buildTabBar = function(){
     {id:'stats',lbl:'\uD83D\uDCCA Statistik'},
     {id:'emp',lbl:'\uD83D\uDC65 Karyawan'},
     {id:'hist',lbl:'\uD83D\uDCDC Riwayat'},
-    {id:'kpi',lbl:'\uD83D\uDCCA KPI Bisnis'},
     {id:'finansial',lbl:'\uD83D\uDCB5 Finansial'},
     {id:'operasional',lbl:'\u2699\uFE0F Operasional'},
     {id:'supplier',lbl:'\uD83D\uDC1F Hutang Supplier'},
@@ -10947,7 +10950,7 @@ renderAdmin = function(){
       {id:'dash',def:'&#127968; Dashboard'},{id:'eval',def:'&#128203; Penilaian'},
       {id:'payroll',def:'&#128176; Payroll'},{id:'stats',def:'&#128202; Statistik'},
       {id:'emp',def:'&#128101; Karyawan'},{id:'hist',def:'&#128220; Riwayat'},
-      {id:'kpi',def:'&#128202; KPI Bisnis'},{id:'ai',def:'&#129302; AI'},{id:'finansial',def:'&#128181; Finansial'},
+      {id:'ai',def:'&#129302; AI'},{id:'finansial',def:'&#128181; Finansial'},
       {id:'operasional',def:'&#9881; Operasional'},{id:'supplier',def:'&#128031; Hutang Supplier'},
       {id:'taligf',def:'&#129399; Tali GF'},
       {id:'admin',def:'&#128295; Admin'}
@@ -12725,7 +12728,6 @@ buildTabBar = function(){
     {id:'stats',   lbl:'Statistik'},
     {id:'emp',     lbl:'Karyawan'},
     {id:'hist',    lbl:'Riwayat'},
-    {id:'kpi',     lbl:'KPI Bisnis'},
     {id:'supplier',lbl:'Hutang Supplier'},
     {id:'taligf',  lbl:'Tali GF'},
     {id:'admin',   lbl:'Admin'}
@@ -13130,7 +13132,6 @@ buildTabBar = function(){
     {id:'stats',   lbl:'Statistik'},
     {id:'emp',     lbl:'Karyawan'},
     {id:'hist',    lbl:'Riwayat'},
-    {id:'kpi',     lbl:'KPI Bisnis'},
     {id:'supplier',lbl:'Hutang Supplier'},
     {id:'taligf',  lbl:'Tali GF'},
     {id:'admin',   lbl:'Admin'}
@@ -13294,7 +13295,6 @@ renderAdmin = function(){
     var tc = cfg.tabsConfig||{};
     var coreDefs = [
       {id:'dash',def:'Dashboard'},
-      {id:'kpi',def:'KPI'},
       {id:'hr',def:'HR'},
       {id:'finance',def:'Finance'},
       {id:'analytics',def:'Analytics'},
@@ -13858,8 +13858,7 @@ function _buildTabs(){
     ]},
     {type:'g', id:'finance', lbl:'Finance ▾', tabs:[
       {id:'laporan',  lbl:'Laporan Bulanan'},
-      {id:'supplier', lbl:'Hutang Supplier'},
-      {id:'kpi',      lbl:'KPI Bisnis'}
+      {id:'supplier', lbl:'Hutang Supplier'}
     ]},
     {type:'s', id:'taligf', lbl:'Tali GF'},
     {type:'s', id:'stats',  lbl:'Statistik'},
@@ -14531,7 +14530,6 @@ buildTabBar = function(){
     {id:'laporan', lbl:'Laporan Bulanan'},
     {id:'profit',  lbl:'Pendapatan & Keuntungan'},
     {id:'supplier',lbl:'Hutang Supplier'},
-    {id:'kpi',     lbl:'KPI Bisnis'},
     {id:'eval',    lbl:'Penilaian'},
     {id:'payroll', lbl:'Payroll'},
     {id:'emp',     lbl:'Karyawan'},
@@ -15601,7 +15599,6 @@ buildTabBar = function(){
   var cfg=getCfg(); var tc=cfg.tabsConfig||{}; var role=window._ajwRole||'admin';
   var defs=[
     {id:'dash',lbl:'HOME'},
-    {id:'kpi',lbl:'KPI'},
     {id:'hr',lbl:'HR'},
     {id:'finance',lbl:'FINANCE'},
     {id:'tools',lbl:'TOOLS'},
@@ -16502,6 +16499,83 @@ img#LG{
   if(typeof applyFontMode==='function')applyFontMode();
   updateBadge();
   if(typeof _applyOpsTheme==='function')_applyOpsTheme();
+  /* Restore supplier module renderSupplier (module loads before inline script which overwrites it) */
+  if(typeof window._ajwSupplierRenderLatest==='function') renderSupplier=window._ajwSupplierRenderLatest;
+  /* ===== AJW PAGE MAP SYSTEM OVERRIDE v20260507 ===== */
+  buildTabBar=function(){
+    var cfg=getCfg(); var tc=cfg.tabsConfig||{}; var role=window._ajwRole||'admin';
+    var defs=[
+      {id:'dash',lbl:'HOME'},
+      {id:'operasional',lbl:'OPERASIONAL'},
+      {id:'hr',lbl:'HR'},
+      {id:'finance',lbl:'FINANCE'},
+      {id:'content',lbl:'CONTENT'},
+      {id:'analytics',lbl:'ANALYTICS'},
+      {id:'ai',lbl:'AI SYSTEM'},
+      {id:'tools',lbl:'TOOLS'},
+      {id:'development',lbl:'DEV'},
+      {id:'admin',lbl:'CONTROL'}
+    ];
+    if(role!=='admin') defs=defs.filter(function(d){ return d.id!=='admin'; });
+    var h='<div class="tab-brand">AJW WORKSPACE</div>';
+    defs.forEach(function(d){
+      if(tc['hide_'+d.id]) return;
+      var lbl=tc['label_'+d.id]||d.lbl;
+      var act=(_activeTab===d.id);
+      h+='<button class="tab '+(act?'act':'on')+'" id="T-'+d.id+'" onclick="_navTo(\''+d.id+'\')">'+esc(lbl)+'</button>';
+    });
+    customTabs.forEach(function(ct){
+      var act=(_activeTab==='ct_'+ct.id);
+      h+='<button class="tab '+(act?'act':'on')+'" onclick="_navTo(\'ct_'+ct.id+'\')">'+esc((ct.icon||'')+' '+ct.name)+'</button>';
+    });
+    var el=document.getElementById('TABS'); if(el) el.innerHTML=h;
+  };
+  _navTo=function(tabId){
+    if(tabId==='agent'||tabId==='automation') window._aiSub=tabId;
+    _activeTab=tabId; buildTabBar();
+    _resetPanelState();
+    ['hr','finance','tools','ai','log','development','operasional','content'].forEach(function(id){
+      if(!document.getElementById('V-'+id)){
+        var d=document.createElement('div'); d.id='V-'+id; d.style.display='none';
+        var b=document.querySelector('.body'); if(b) b.appendChild(d);
+      }
+    });
+    if(tabId==='agent'||tabId==='automation') tabId='ai';
+    var all=['dash','hr','finance','analytics','ai','tools','development','eval','payroll','stats','emp','hist','admin','supplier','taligf','kpi','laporan','log','operasional','content'].concat(customTabs.map(function(ct){return 'ct_'+ct.id;}));
+    all.forEach(function(id){ var v=document.getElementById('V-'+id); if(v) v.style.display=(id===tabId)?'block':'none'; });
+    try{
+      if(tabId==='dash') renderDash();
+      else if(tabId==='operasional'){ if(typeof _renderOperasional==='function') _renderOperasional(window._opsSub||'dash'); }
+      else if(tabId==='hr') _renderHR('dash');
+      else if(tabId==='finance') _renderFinance('dash');
+      else if(tabId==='content'){ if(typeof _renderContent==='function') _renderContent(window._contentSub||'dash'); }
+      else if(tabId==='analytics'&&typeof _renderAnalytics==='function') _renderAnalytics(window._analyticsSub||'dash');
+      else if(tabId==='ai'&&typeof _renderAI==='function') _renderAI(window._aiSub||'agent');
+      else if(tabId==='tools') _renderTools(window._toolsSub||'dash');
+      else if(tabId==='development') _renderDevelopment(window._devSub||'resources');
+      else if(tabId==='eval') renderEvalForm();
+      else if(tabId==='payroll') renderPayrollForm();
+      else if(tabId==='stats') renderStats();
+      else if(tabId==='emp') renderEmp();
+      else if(tabId==='hist') renderHist();
+      else if(tabId==='log') _renderLog();
+      else if(tabId==='admin') renderAdmin();
+      else if(tabId==='supplier') renderSupplier();
+      else if(tabId==='kpi'){ loadKPI(); renderKPI(); }
+      else if(tabId==='taligf'){ _activeTab='tools'; buildTabBar(); _renderTools('rumus'); }
+      else if(tabId==='laporan') _renderLaporan();
+      else if(tabId.indexOf('ct_')===0){ if(typeof renderCustomTab==='function') renderCustomTab(tabId.replace('ct_','')); }
+    }catch(e){
+      console.error(e);
+      toast('Terjadi error saat membuka tab. Kembali ke Dashboard...','error',3500);
+      all.forEach(function(id){ var v=document.getElementById('V-'+id); if(v) v.style.display=(id==='dash')?'block':'none'; });
+      _activeTab='dash'; buildTabBar();
+      try{ renderDash(); }catch(_){}
+    }
+    window.scrollTo(0,0);
+  };
+  SW=function(tab){ _navTo(tab); };
+  /* Tools: _renderTools original handles all sub-tabs. No override needed. */
   buildTabBar();
   _navTo('dash');
 })();
@@ -16537,5 +16611,7 @@ img#LG{
 </script>
 <script src="perf-patch.js?v=20260421.2"></script>
 <script src="cs-auto.js?v=20260422.1"></script>
+<link rel="stylesheet" href="ui-polish.css?v=20260507.6">
 </body>
 </html>
+
